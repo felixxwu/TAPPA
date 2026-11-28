@@ -2,7 +2,6 @@ extends GutTest
 # Cars whose spec names a wheel_model show that model on every wheel in place of the textured cylinder,
 # sized to the spec's wheel_radius and turned so its outer face points away from the car.
 
-const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 const WHEEL := "res://tests/headless/fixtures/test_wheel.tscn"  # a radius-0.5 cylinder on an x axle
 
 var _car: VehicleBody3D
@@ -16,8 +15,8 @@ func before_each() -> void:
 	_cars = CarFixtures.cars()
 	_cars[0]["wheel_model"] = WHEEL
 	CarLibrary.override_for_test(_cars)
-	SceneHelpers.minimal_world()
-	var scene: Node3D = load("res://main.tscn").instantiate()
+	Config.reset()
+	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(scene)
 	_car = scene.get_node("Car")
 	await get_tree().physics_frame

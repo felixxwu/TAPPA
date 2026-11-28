@@ -21,8 +21,7 @@ extends RefCounted
 #
 # THE GLOBALS PERSIST ACROSS SCENES. That is the trap reset() exists to guard: the
 # podium and menu showcase render trees with this same shader, so a storm's stronger
-# sway must not keep blowing there after a storm stage is exited — see world.gd's
-# _exit_tree() and Foliage.spawn_trees()'s base seed.
+# sway must not keep blowing there after a storm level is exited.
 
 # Names must match the [shader_globals] block in project.godot and the
 # `global uniform` declarations in shaders/wind_sway.gdshaderinc.
@@ -92,9 +91,8 @@ static func base(cfg: GameConfig) -> void:
 # every tree field in the game, so a scene that never thinks about weather still gets
 # living trees.
 #
-# THE GUARD IS LOAD-BEARING, not a micro-optimisation. On a stage, world.gd pushes the
-# condition's own strength from _apply_weather_look BEFORE _generate_track scatters the
-# trees — an unconditional base() here would land afterwards and quietly flatten a
+# THE GUARD IS LOAD-BEARING, not a micro-optimisation. The level pushes the
+# condition's own strength BEFORE its trees are spawned — an unconditional base() here would land afterwards and quietly flatten a
 # storm back to calm. Reading the live global instead of tracking a flag is what makes
 # that ordering-proof: reset() leaves the base behind on stage exit, so by the time a
 # podium or showcase spawns, the value is already non-zero and this is a no-op.

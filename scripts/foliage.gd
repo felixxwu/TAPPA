@@ -1,7 +1,7 @@
 class_name Foliage
 extends RefCounted
 # Docs: features/trees.md — update in the same change as this file.
-# Tests: tests/headless/test_billboard_field.gd, tests/headless/test_tree_scatter.gd — extend in the same change.
+# Tests: tests/headless/test_billboard_field.gd — extend in the same change.
 # Centralised foliage spawning. ONE place owns how trees + bushes are represented
 # and builds the shared mesh/material, so they look identical everywhere they
 # appear. Trees are ALWAYS billboards (BillboardField, cut out as `tree_cutout_mode` says);
@@ -120,7 +120,7 @@ static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: 
 	# Sink the cards into the ground by a per-path tunable offset (negative) to hide
 	# the seam where the trunk meets a sloped surface — same split as size_jitter.
 	# Props are seated on the collision height, NOT lifted onto deep snow's raised ground
-	# (ps1_terrain_snow.gdshader), so in the snow they look buried in it.
+	# (level_ground.gdshader), so in the snow they look buried in it.
 	var ground_offset := (
 		cfg.region_tree_billboard_ground_offset_m if use_region_profile
 		else cfg.tree_billboard_ground_offset_m)
@@ -138,9 +138,8 @@ static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: 
 
 # Spawn the ground-cover bush field as a child of `parent`: always a 3D
 # TreeMeshField (the low-poly bush mesh), never a billboard, with NO collision
-# (bushes are pass-through — world.gd adds a separate BushField hit volume in the
-# stage) and per-instance baked terrain light so they match the ground. Scaled to
-# cfg.bush_height_m — the SAME target height the stage uses, so a bush is the same
+# (bushes are pass-through — a separate BushField is their hit volume) and per-instance baked terrain light so they match the ground. Scaled to
+# cfg.bush_height_m, so a bush is the same
 # size wherever it grows. Returns the created field node.
 static func spawn_bushes(parent: Node3D, positions: PackedVector2Array, terrain: Object,
 		render_distance: float, render_fade: float) -> TreeMeshField:

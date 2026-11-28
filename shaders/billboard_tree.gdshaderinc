@@ -9,8 +9,8 @@ uniform float render_distance = 80.0;
 uniform float fade_band = 15.0;
 // Bias distant sampling toward cheaper mips (mobile texture-bandwidth win).
 uniform float lod_bias = 0.0;
-// Fake hemisphere-ambient + one directional sun, matching the terrain
-// (terrain_manager._bake_light / ps1_models_lit.gdshader). A star card's
+// Fake hemisphere-ambient + one directional sun, matching
+// ps1_models_lit.gdshader. A star card's
 // normal is horizontal, so hemi is fixed at 0.5 (a
 // vertical surface sees half sky, half ground). NO source_color hint: terrain
 // bakes raw Color floats, so trees match the ground by using them raw too.

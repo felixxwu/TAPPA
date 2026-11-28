@@ -3,7 +3,7 @@ extends GutTest
 
 func test_wheel_force_arrows_drawn_when_grounded() -> void:
 	# Flat fixture (car + ground) — this only inspects the car's debug overlay, so
-	# it doesn't need main.tscn's terrain/track/foliage generation.
+	# it doesn't need a level.
 	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(scene)
 	var car: VehicleBody3D = scene.get_node("Car")

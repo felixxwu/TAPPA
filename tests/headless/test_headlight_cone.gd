@@ -280,8 +280,8 @@ func test_strength_is_clamped_to_unit_range() -> void:
 # --- the weather entry -------------------------------------------------------
 
 func test_night_authors_every_look_key() -> void:
-	# world.gd reads the five LOOK_KEYS as an unguarded set, so a partially authored
-	# look block would crash the stage boot rather than degrade.
+	# The look keys are read as an unguarded set, so a partially authored look block
+	# would crash rather than degrade.
 	var entry := WeatherLibrary.by_id(WeatherLibrary.WEATHER_NIGHT)
 	assert_eq(String(entry.get("id", "")), WeatherLibrary.WEATHER_NIGHT, "the night entry exists")
 	var look: Dictionary = entry.get("look", {})
@@ -340,7 +340,7 @@ func test_there_is_a_default_sky_for_regions_that_name_none() -> void:
 	# home / home_coast author no sky_panorama. The region look now assigns
 	# unconditionally, falling back to this — which is what stops a Greece or night
 	# sky following the player into the next home stage, since the PanoramaSkyMaterial
-	# is a shared main.tscn sub-resource. An empty default would reintroduce the leak.
+	# is a shared scene sub-resource. An empty default would reintroduce the leak.
 	var cfg := GameConfig.new()
 	assert_ne(cfg.default_sky_panorama, "", "a fallback sky exists")
 	assert_true(ResourceLoader.exists(cfg.default_sky_panorama),
@@ -450,8 +450,7 @@ func test_every_night_lit_shader_includes_the_cone() -> void:
 	# everything around them lights up — a bug that is obvious in-game and invisible
 	# in every other test.
 	var lit_at_night: PackedStringArray = [
-		"res://shaders/ps1_models.gdshader",
-		"res://shaders/ps1_terrain_snow.gdshader",
+		"res://shaders/level_ground.gdshader",
 		"res://shaders/ps1_models_lit.gdshader",
 		"res://shaders/billboard_tree.gdshaderinc",  # shared by every billboard tree variant
 		"res://shaders/tree_canopy.gdshader",
@@ -477,8 +476,7 @@ func test_the_cone_is_added_to_the_light_term_never_multiplied() -> void:
 	# term is baked near-black, so a multiplicative cone cannot re-light it — the
 	# headlight would simply not appear. Every use site must ADD.
 	var lit_at_night: PackedStringArray = [
-		"res://shaders/ps1_models.gdshader",
-		"res://shaders/ps1_terrain_snow.gdshader",
+		"res://shaders/level_ground.gdshader",
 		"res://shaders/ps1_models_lit.gdshader",
 		"res://shaders/billboard_tree.gdshaderinc",  # shared by every billboard tree variant
 		"res://shaders/tree_canopy.gdshader",
@@ -494,13 +492,3 @@ func test_the_cone_is_added_to_the_light_term_never_multiplied() -> void:
 			"%s adds the cone to the light term" % path)
 		assert_false(code.contains("* hl_color"),
 			"%s never multiplies by the cone — a dark bake cannot be re-lit that way" % path)
-
-
-func test_the_terrain_shader_still_has_no_vertex_stage() -> void:
-	# The cone is fragment-side on terrain deliberately, and the include declares
-	# only globals and a function. Restated here next to the night work so that a
-	# future "just move it to the vertex stage for speed" change trips a test whose
-	# name says why it exists, not only the far-away render smoke test.
-	var code: String = (load("res://shaders/ps1_models.gdshader") as Shader).code
-	assert_false(code.contains("void vertex()"),
-		"terrain stays free of a vertex stage; cells reach 25 m at the coarsest LOD")

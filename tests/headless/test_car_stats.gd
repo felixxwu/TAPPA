@@ -10,8 +10,8 @@ extends GutTest
 #     hand-built synthetic dicts + a bare GameConfig.new(), so no catalogue entry is
 #     needed at all.
 #
-# They used to sit in test_car_library.gd, whose before_each builds minimal_world() +
-# main.tscn for every test (~1.1 s each). None of these touch that scene, so the build
+# They used to sit in test_car_library.gd, whose before_each built a whole world
+# for every test (~1.1 s each). None of these touch that scene, so the build
 # was pure cost — ~9 s across the nine. test_car_library.gd keeps the tests that really
 # do need a booted car (apply_car / apply_owned / cycle_car / model rendering).
 #

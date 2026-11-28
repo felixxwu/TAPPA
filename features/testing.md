@@ -43,10 +43,7 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 | `test_config_applied.gd` | config → scene propagation |
 | `test_engine_audio.gd` | synth firing phases, `fill()`, clamping |
 | `test_engine_library.gd` | every `EngineLibrary` catalog entry loads and `apply()` writes the expected fields |
-| `test_terrain.gd` | `height_at`, seed determinism |
-| `test_car_terrain.gd` | suspension on slopes |
 | `test_debug_arrows.gd` | force overlay updates |
-| `test_perf_overlay.gd` | frame profiler overlay toggles / samples |
 | `test_level_stats.gd` | Hafren stats overlay toggles; tally counts only MultiMeshes in draw range |
 | `test_hud.gd` | label updates |
 
@@ -58,13 +55,9 @@ inside the ~5 minute budget. Re-measure with `/optimise-test-suite` (or a full
 §0 has the exact invocation. Per-test JUnit times cover test bodies only, so `before_all`
 builds and script loading are invisible in them.
 
-The known heavy files: `test_track_generator.gd` (live track generation), `test_smoke.gd` (a live
-world build), `test_terrain_memory.gd` (each test bakes a road into its own `TerrainManager`,
-and what they assert IS what the cache keeps and drops, so sharing one would destroy the
-subject), the per-car physics sweeps (`test_car_types.gd`, `test_car_library.gd`,
-`test_retune.gd`, `test_car.gd`, already on `SimTest`'s cached settle) and
-`test_terrain_precompute.gd`.
-
+The known heavy files: the scene tests that load the flat level (`test_smoke.gd` and the
+others on `add_level_world`, below) and the per-car physics sweeps (`test_car_types.gd`,
+`test_car_library.gd`, `test_retune.gd`, `test_car.gd`, already on `SimTest`'s cached settle).
 
 By default Godot's headless main loop is **paced to real time** at the tick
 rate, so each `await get_tree().physics_frame` costs ~1/60 s of wall-clock
@@ -83,53 +76,24 @@ raising `physics_ticks_per_second`, which both change the per-step delta
 physics the tuned assertions depend on; `Engine.max_fps` has no effect headless.
 
 `--fixed-fps` only collapses time spent **awaiting frames** — genuine CPU work
-is the remaining floor. The dominant such cost is **`main.tscn` generation**:
-`world.gd._ready()` runs the full rally-track DFS search (~7 s) and scatters
-trees + bushes (~7 s) synchronously, so each instantiate is ~15 s of CPU. The
-levers, in order of payoff:
+is the remaining floor. The levers, in order of payoff:
 
-- **Don't generate a world you don't inspect.** `tests/headless/scene_helpers.gd`
-  exposes `SceneTestHelpers.minimal_world()` — call it instead of `Config.reset()`
-  right before instantiating `main.tscn`. It trims the track to 1 turn and sets
-  `trees_per_turn = 0` (which zeroes bushes too — they share the scatter params),
-  cutting the build from ~15 s to <1 s while still wiring up the car, HUD, cameras
-  and TrackProgress. `test_hud.gd` / `test_mobile_controls.gd` / `test_car_library.gd`
-  / `test_camera_manager.gd` / `test_render_smoke.gd` / `test_config_applied.gd`
-  use it (each `after_each` calls `Config.reset()` so the minimal track/foliage
-  doesn't leak into later files that don't reset Config). Tests that only inspect
-  the car + ground (no world nodes at all) go one cheaper still and instantiate
-  the flat `res://tests/fixtures/test_track.tscn` directly (`test_debug_arrows.gd`).
-  Only the files that genuinely assert on the track/terrain/**foliage** pay the
-  full generation: `test_loading_screen.gd`, and `test_smoke.gd` — whose shared
-  `before_all` scene is read by a test counting colliding vs non-colliding
-  `TreeMeshField` children, so zeroing `trees_per_turn` there would quietly make
-  that assertion vacuous. `test_terrain.gd` does **not**: its one scene test
-  (`test_car_spawns_just_above_terrain`) asserts on the `$Floor` heightfield and a
-  chunk's material, both of which `minimal_world()` leaves untouched, so it takes
-  the cheap route and resets Config in `after_each`.
-- **Skip foliage but keep real terrain.** `SceneTestHelpers` exposes exactly two
-  helpers — `use_test_config()` and `minimal_world()`. There is no
-  `no_foliage_world()`; a foliage-only knob that left `track_turn_count` at its
-  authored value has never existed, so don't go looking for one.
-  `minimal_world()` zeroes the trees **and** shortens the track, which is what
-  makes it cheap (<1 s vs ~15 s). Crucially it does not touch the `$Floor`
-  heightfield — that is generated identically — so a terrain-regression test can
-  still use it and get real terrain to settle on. `test_car_terrain.gd` is the
-  canary that relies on exactly that property, and says so in its own
-  `before_each` comment.
-- **Generate once per file, not per test.** When several tests in a file share
-  one generated world, build it in `before_all` (plain `add_child`, freed in
-  `after_all`) and restore per-test state in `before_each` rather than
-  re-instantiating `main.tscn` each time. Many files do this — `test_hud.gd`,
-  `test_config_applied.gd`, `test_smoke.gd` among them. The
-  cached-resting-pose variant of the idea (cold-settle once, then restore the
-  `Transform3D` and re-stabilise in a handful of frames) lives in
-  `sim_test.gd` → `setup_settled_car`, described in the next bullet;
-  `test_car_terrain.gd` does NOT use it, it takes the cheap
-  `minimal_world()` + `before_each` route instead.
+- **Don't load a level you don't inspect.** Tests that only need a car on the ground
+  instantiate the flat `res://tests/fixtures/test_track.tscn` directly (`test_debug_arrows.gd`,
+  `test_turbo_fielding.gd`, `test_wheel_models.gd`, `test_retune.gd`, `test_car_library.gd`).
+- **Use the flat level for the real game scene.** Tests that need the HUD, cameras, pause menu
+  or `LevelView` itself call `SceneTestHelpers.add_level_world(parent)`: it writes a tiny flat
+  level to `user://`, points `LevelView` at it and returns `Scenes.WORLD` once it has loaded.
+  Free the scene and call `SceneTestHelpers.remove_level_world()` in teardown. Never load the
+  real Hafren level in a test.
+- **Load once per file, not per test.** Build the scene in `before_all` and free it in
+  `after_all`, restoring per-test state in `before_each` (`test_hud.gd`, `test_config_applied.gd`,
+  `test_smoke.gd`, `test_render_smoke.gd`). The cached-resting-pose variant of the idea
+  (cold-settle once, then restore the `Transform3D` and re-stabilise in a handful of frames)
+  lives in `sim_test.gd` → `setup_settled_car`, described in the next bullet.
 - **Hand the authored config back in teardown.** `Config.data` is a single global
   that outlives the script that mutated it, so a file which installs a different
-  baseline (`use_test_config()`, `minimal_world()`) and never restores it silently
+  baseline (`use_test_config()`) and never restores it silently
   re-tunes every LATER file that reads the *ambient* config. That is an
   order-dependent failure — green under `--fast <one file>`, red in a full run.
   The frozen physics baseline is the worst offender because it authors ~37
@@ -140,7 +104,7 @@ levers, in order of payoff:
   and how the load splits front/rear. So **any file that installs a non-authored
   baseline calls `Config.reset()` in its teardown**: `sim_test.gd` (`after_all` —
   a subclass that defines its own `after_all` shadows it and must reset too),
-  `test_drivetrain.gd`, `test_drive_mode.gd`, `test_car_terrain.gd`. The contract
+  `test_drivetrain.gd`, `test_drive_mode.gd`. The contract
   is pinned by `test_config_isolation.gd` → `test_reset_restores_the_authored_baseline_after_a_swap`
   (and its non-vacuity partner), which compares field-for-field against a freshly
   loaded duplicate rather than pinning any value.
@@ -248,8 +212,8 @@ against a leaked override from an earlier file.
 
 Under the headless runner a real scene change is **not** scoped to the test that
 triggered it: the scene is instantiated into `/root`, nothing ever frees it, and it
-shares the one `World3D` / physics space with every later test. A leaked `main.tscn`
-makes a settling car land on its terrain instead of the fixture ground (crooked
+shares the one `World3D` / physics space with every later test. A leaked `Scenes.WORLD`
+makes a settling car land on its ground instead of the fixture ground (crooked
 attitude, asymmetric wheel loads, never at rest) and makes camera pick rays hit it
 first — silent, order-dependent failures that are green under `--fast <file>` and red in
 a full run.
@@ -366,7 +330,7 @@ Two traps worth knowing before writing another one:
 - **`_initialize`, never `_init`.** `-s` compiles the script before the SceneTree exists, so the
   autoloads (`Config`, `PerfLog`, …) that `scripts/*.gd` reference at class scope are missing and
   the compile fails. Await a frame in `_initialize`, and `load()` the classes you need rather than
-  naming their types — naming `TerrainManager` at class scope drags the same problem back in.
+  naming their types — naming such a class at class scope drags the same problem back in.
 - **Always `quit()`.** A SceneTree that finishes its work and does not quit idles forever, and the
   run has to be killed by hand. Put the `quit()` outside the body that can fail.
 

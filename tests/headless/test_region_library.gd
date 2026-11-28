@@ -69,7 +69,7 @@ func test_look_from_inherits_parent_block_and_own_keys_win() -> void:
 	assert_eq(child.get("tarmac_color"), Color(0.1, 0.1, 0.1),
 		"the inheriting region's own key overrides the parent's")
 	assert_ne(child.get("tarmac_color"), parent.get("tarmac_color"))
-	# The plumbing key never leaks into the look dict world.gd consumes.
+	# The plumbing key never leaks into the look dict.
 	assert_false(child.has("look_from"), "look_from is not a look key")
 
 func test_tree_mix_defaults_when_unauthored() -> void:

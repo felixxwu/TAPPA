@@ -1,21 +1,23 @@
 extends GutTest
 # BillboardField.size_factor(idx) exposes the per-instance size jitter the felling /
 # plough-through path reads. Logic only — no tuned values pinned. Built against a
-# synthetic position list + a bare terrain (height is irrelevant: size_factor is a
+# synthetic position list + flat ground (height is irrelevant: size_factor is a
 # pure hash of the instance XZ).
 
 const TEX := preload("res://textures/tree.png")
 
 
+class _FlatGround:
+	func height_at(_x: float, _z: float) -> float:
+		return 0.0
+
+
 func _build_field(size_min: float) -> BillboardField:
-	var terrain := TerrainManager.new()
-	terrain.focus_path = NodePath("")
-	add_child_autofree(terrain)
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(0, 0), Vector2(10, 0), Vector2(20, 0)])
 	var mesh := Foliage.tree_silhouette_mesh(TEX)
-	field.build(positions, terrain, Vector2(5, 5), TEX, 1.0, 4.0, true,
+	field.build(positions, _FlatGround.new(), Vector2(5, 5), TEX, 1.0, 4.0, true,
 		200.0, 10.0, 0.0, mesh, true, size_min)
 	return field
 

@@ -12,9 +12,8 @@ extends CanvasLayer
 # too. See features/menus.md.
 
 # The scene's CameraManager, so a camera pick in Settings switches the live camera.
-# Emitted when the player picks "Reset to track" — world.gd snaps the live car onto
-# the centerline beside its current position (TrackProgress.manual_reset_pose) and the
-# menu resumes. The menu itself has no car reference, so it delegates the reset upward.
+# Emitted when the player picks "Reset to track" — the host snaps the live car back
+# onto the road and the menu resumes. The menu itself has no car reference, so it delegates the reset upward.
 signal reset_to_track_requested
 signal closed  # the menu was resumed
 # Emitted when the player picks "Photo Mode". PhotoModeHost owns the free-fly camera (it
@@ -46,12 +45,11 @@ var _cards: CardCarousel       # the menu's cards; MenuNav's opening focus (open
 
 var settings_menu: SettingsMenu
 
-# Default-CLOSED: the menu is inert until the world finishes loading and world.gd
+# Default-CLOSED: the menu is inert until the world finishes loading and the host
 # calls set_input_enabled(true). Without this the Pause button / Esc are live from
-# frame 0 — including during world.gd's awaited generation window (loading overlay
-# up), where opening the menu would set get_tree().paused = true MID-generation and
-# let the player quit/resume into a half-built world. Mirrors the default-inert
-# `_armed` gate on StageManager. See features/menus.md.
+# frame 0 — including during the awaited load (loading overlay up), where opening the
+# menu would set get_tree().paused = true MID-load and let the player quit/resume into
+# a half-built world. See features/menus.md.
 var _input_enabled := false
 
 
@@ -61,7 +59,7 @@ func _ready() -> void:
 	_set_open(false)
 
 
-# Arm (or disarm) the menu. world.gd enables it once the world is generated, so pause
+# Arm (or disarm) the menu. The host enables it once the world is generated, so pause
 # can't fire while the loading overlay is still up; photo mode disarms it while it runs.
 #
 # DISARMING NEVER CLOSES AN OPEN MENU — that would strand get_tree().paused. A caller
@@ -101,7 +99,7 @@ func resume() -> void:
 	closed.emit()
 
 
-# Reset to track: hand the reset to the host (which owns the car + TrackProgress),
+# Reset to track: hand the reset to the host (which owns the car),
 # then unfreeze and close the menu so the player drops straight back into the run.
 # (Car.reset_to queues the teleport for the physics step, so it survives being fired
 # from here — outside the physics frame, and even while the tree is still paused.)

@@ -25,10 +25,10 @@ extends GutTest
 # cannot happen during a test run whether or not the author knew one was reachable.
 #
 # That replaced two partial, opt-in seams that between them did NOT cover the ground:
-# `world.gd`'s per-instance `scene_change_hook` had to be installed per test file, and
+# a per-instance `scene_change_hook` had to be installed per test file, and
 # `RallySession.auto_load_scenes` — the one that looks like the seam for this — guards
 # start_rally/advance only, while `abandon()` emits `rally_finished` unguarded and
-# world.gd turns THAT into a real transition. Tests calling `abandon()` in teardown to
+# the world turned THAT into a real transition. Tests calling `abandon()` in teardown to
 # "clean up" were the ones leaking. Both seams still work and still take precedence;
 # they are just no longer load-bearing.
 #
@@ -39,21 +39,16 @@ extends GutTest
 # a guard only catches polluters that sort BEFORE it — `world` puts this near the
 # end of the run.
 
-# Root scripts of the scenes a stray change_scene_to_file would install. Matched by
-# script path rather than node name so a scene rename can't quietly disarm the guard.
-const GAME_SCENE_SCRIPTS := [
-	"res://scripts/world.gd",     # main.tscn
-]
+# The scenes a stray change_scene_to_file would install. Matched by scene path rather
+# than node name so a node rename can't quietly disarm the guard.
+const GAME_SCENES := [Scenes.WORLD]
 
 
 func _leaked_scene_names() -> Array:
 	var leaked: Array = []
 	for child in get_tree().root.get_children():
-		var script: Script = child.get_script()
-		if script == null:
-			continue
-		if GAME_SCENE_SCRIPTS.has(script.resource_path):
-			leaked.append("%s (%s)" % [child.name, script.resource_path])
+		if GAME_SCENES.has(child.scene_file_path):
+			leaked.append("%s (%s)" % [child.name, child.scene_file_path])
 	return leaked
 
 
@@ -85,10 +80,8 @@ func test_real_scene_changes_are_suppressed_for_this_run() -> void:
 # that was never requested.
 func test_a_suppressed_change_records_its_destination() -> void:
 	var before := Scenes.last_blocked_path
-	# Any real path serves; MAIN is used because it is one of the two that still exist
-	# (this asserted Scenes.PODIUM until podium.tscn and its constant were deleted).
-	Scenes.change_to(get_tree(), Scenes.MAIN)
-	assert_eq(Scenes.last_blocked_path, Scenes.MAIN,
+	Scenes.change_to(get_tree(), Scenes.WORLD)
+	assert_eq(Scenes.last_blocked_path, Scenes.WORLD,
 		"a suppressed transition records the path it wanted, for tests to assert on")
 	assert_eq(_leaked_scene_names(), [],
 		"and it does NOT actually load the scene")

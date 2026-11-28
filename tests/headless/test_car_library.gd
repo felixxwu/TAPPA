@@ -1,41 +1,26 @@
 extends GutTest
 # The selectable car roster (CarLibrary) and car.gd's apply_car: each
-# entry must be sane, main.tscn must boot as the first car, and applying a car
+# entry must be sane, and applying a car
 # must overlay its dimensions, mass, engine character and drive layout.
-
-const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 var _scene: Node3D
 var _car: VehicleBody3D
 
 
 func before_each() -> void:
-	# These tests inspect the car roster + apply_car, not the track or
-	# its foliage, so boot a minimal world (~15s -> <1s per instance). minimal_world
-	# resets Config to baseline first, exactly as the old Config.reset() did.
-	# NB: a shared before_all instance is NOT safe here — several tests flip the roster
-	# to CarFixtures mid-test and rely on world.gd re-applying the freshly-built car,
-	# so a per-test build is the clean way.
+	# Per-test, not before_all: several tests flip the roster to CarFixtures mid-test.
 	CarLibrary.reset()
 	EngineLibrary.reset()  # guard against a leaked override from another test file
-	SceneHelpers.minimal_world()
-	_scene = load("res://main.tscn").instantiate()
+	Config.reset()
+	_scene = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(_scene)
 	_car = _scene.get_node("Car")
-	await get_tree().physics_frame  # let _ready() + world.apply_car(0) run
+	await get_tree().physics_frame
 
 
 func after_each() -> void:
 	Config.reset()  # don't leak a car selection into other test files
 	CarFixtures.restore()
-
-
-func test_main_boots_as_first_car() -> void:
-	var first: Dictionary = CarLibrary.CARS[0]
-	assert_eq(_car.current_car_name(), first["name"], "main.tscn boots as the first car")
-	assert_almost_eq(Config.data.mass, first["mass"], 0.001, "config mass is the first car's")
-	var size: Vector3 = (_car.get_node("Chassis").mesh as BoxMesh).size
-	assert_eq(size, first["body"], "chassis box sized to the first car")
 
 
 func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:

@@ -34,9 +34,9 @@ enum DriveMode { RWD, AWD, FWD }
 var car: VehicleBody3D
 var engine: EngineSim
 var drive_mode := DriveMode.RWD  # which axle(s) the engine drives
-# Terrain that resolves the surface under each wheel (a TerrainManager exposing
-# surface_at(x, z) -> (road_weight, tarmac_weight)). Set by car.gd from its Floor
-# sibling; null on the flat test fixtures, where every wheel keeps the base μ.
+# Terrain that resolves the surface under each wheel (LevelView's
+# surface_at(x, z) -> (road_weight, tarmac_weight)). Set by car.gd from its sibling;
+# null on the flat test fixtures, where every wheel keeps the base μ.
 var terrain: Object = null
 var rear_wheels: Array = []
 var front_wheels: Array = []
@@ -820,31 +820,6 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 		_surf_scratch.slip_peak = cfg.tire_slip_peak
 		_surf_scratch.slide_ratio = cfg.sliding_grip_ratio
 		_surf_scratch.road_weight = 1.0  # no terrain to be off the side of
-		return _surf_scratch
-	# Frozen lake: on a stage whose region freezes its water (features/snow-region.md),
-	# a contact over a submerged cell is on ICE, not on whatever is under the ice. So
-	# this OVERRIDES the surface blend rather than scaling it — the lake bed's grass or
-	# gravel is irrelevant to a tyre resting on a frozen surface above it.
-	#
-	# Gated on frozen_water_grip, which is 0.0 on every stage outside the Alps, so the
-	# added cost elsewhere is one float compare on an already hot path. The height query
-	# is the same cache-first lookup the ice COLLIDER is positioned against, so the grip
-	# boundary and the solid surface agree exactly.
-	# has_method guarded like the surface_at check above: a terrain-like stub (or a
-	# future provider) may implement the surface query without the height one, and a
-	# frozen stage must degrade to ordinary ground rather than crash.
-	if cfg.frozen_water_grip > 0.0 and terrain.has_method("height_at") \
-			and terrain.height_at(cp.x, cp.z) < cfg.track_water_level_m:
-		# Ice takes the SNOW side of the tyre rule, not the tarmac side: a frozen lake is
-		# only ever authored by a snowy region, and winter rubber is exactly what the
-		# player should be rewarded for having fitted when they slide out onto it.
-		_surf_scratch.mu_mult = cfg.frozen_water_grip * _weather_mu \
-			* GameConfig.tire_surface_mult_for(cfg, _tire_ctx)
-		_surf_scratch.slip_peak = cfg.tarmac_slip_peak
-		_surf_scratch.slide_ratio = cfg.tarmac_slide_ratio
-		# A frozen lake is something you SLIDE on, not something you bog in — the deep-snow
-		# drag must not fire out on the ice, however far off the road it is.
-		_surf_scratch.road_weight = 1.0
 		return _surf_scratch
 	var s: Vector2 = terrain.surface_at(cp.x, cp.z)
 	# s.x is the road weight and s.y the tarmac weight WITHIN the road, so their product

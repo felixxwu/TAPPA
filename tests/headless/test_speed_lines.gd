@@ -27,7 +27,7 @@ func after_all() -> void:
 
 # A wired overlay: the script on a CanvasLayer with the $ColorRect the scene gives
 # it, carrying a ShaderMaterial of the real shader. Added to the tree so @onready
-# and _ready run exactly as they do in main.tscn.
+# and _ready run exactly as they do in level_view.tscn.
 func _make_overlay() -> CanvasLayer:
 	var layer := CanvasLayer.new()
 	var rect := ColorRect.new()
@@ -86,12 +86,12 @@ func test_unchanged_intensity_is_not_republished() -> void:
 
 # --- Shader pre-warm contract ------------------------------------------------
 # The overlay starts hidden, so its full-screen program would otherwise compile on
-# the first fast moment of the stage. world.gd's warm block discovers warmers by
+# the first fast moment of the level. LevelView's warm-up walk discovers warmers by
 # duck-typing on this exact method pair, so the pair itself is the contract.
 
 func test_implements_the_warm_up_contract() -> void:
 	var o := _make_overlay()
-	# world.gd's warm block filters on precisely these two methods; losing either
+	# LevelView's warm-up walk filters on precisely these two methods; losing either
 	# silently drops the overlay from the pre-warm with no other symptom.
 	assert_true(o.has_method("warm_up"), "discoverable by the warm-up walk")
 	assert_true(o.has_method("clear_warm_up"), "and clearable after the warmed frame")

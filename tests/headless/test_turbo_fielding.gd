@@ -6,7 +6,6 @@ extends GutTest
 # the NA (gain 0) voicing and the turbo is silent even though its physics runs.
 # Uses the synthetic CarFixtures roster (its cars are NA) + the real turbo upgrade.
 
-const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
 
@@ -14,9 +13,9 @@ var _scene: Node3D
 
 
 func before_each() -> void:
-	SceneHelpers.minimal_world()
+	Config.reset()
 	CarFixtures.install()
-	_scene = load("res://main.tscn").instantiate()
+	_scene = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(_scene)
 
 

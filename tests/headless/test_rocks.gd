@@ -11,14 +11,12 @@ extends GutTest
 
 var _cfg: GameConfig
 var _rock_height: float
-var _rocks_per_turn: float
 var _rock_sink: float
 
 
 func before_each() -> void:
 	_cfg = Config.data
 	_rock_height = _cfg.rock_height_m
-	_rocks_per_turn = _cfg.rock_groups_per_turn
 	_rock_sink = _cfg.rock_sink_frac
 
 
@@ -26,7 +24,6 @@ func after_each() -> void:
 	# Config.data is a shared autoload resource — put back anything a test moved, or
 	# the next test file inherits it.
 	_cfg.rock_height_m = _rock_height
-	_cfg.rock_groups_per_turn = _rocks_per_turn
 	_cfg.rock_sink_frac = _rock_sink
 
 
@@ -111,7 +108,7 @@ func test_rock_density_clamps_negative_to_zero() -> void:
 	assert_eq(RegionLibrary.rock_density({"rock_density": -3.0}), 0.0)
 
 
-# The look whitelist is what actually lets a region's density reach world.gd — a key
+# The look whitelist is what actually lets a region's density through — a key
 # missing from LOOK_KEYS is silently dropped by look_of, so the region would render
 # with the default density and nobody would see an error.
 func test_rock_density_survives_the_look_whitelist() -> void:
@@ -119,107 +116,17 @@ func test_rock_density_survives_the_look_whitelist() -> void:
 		"rock_density must be whitelisted or look_of() drops it")
 
 
-# Density multiplies the base count. Again a relationship, not a number.
-func test_rock_params_scale_the_count_by_density() -> void:
-	_cfg.rock_groups_per_turn = 8.0
-	assert_almost_eq(float(_cfg.rock_params(1.0)["points_per_turn"]), 8.0, 0.001)
-	assert_almost_eq(float(_cfg.rock_params(0.5)["points_per_turn"]), 4.0, 0.001)
-	assert_almost_eq(float(_cfg.rock_params(0.0)["points_per_turn"]), 0.0, 0.001)
+class _FlatGround:
+	func height_at(_x: float, _z: float) -> float:
+		return 0.0
 
 
-# Rocks are deliberately NOT on the tree params: trees are dense scenery, rocks are
-# sparse obstacles, and turning the forest up must not turn the hazard field up too.
-func test_rock_scatter_is_independent_of_the_tree_count() -> void:
-	_cfg.rock_groups_per_turn = 5.0
-	var before: float = float(_cfg.rock_params(1.0)["points_per_turn"])
-	var trees_before := _cfg.trees_per_turn
-	_cfg.trees_per_turn = trees_before + 50.0
-	assert_almost_eq(float(_cfg.rock_params(1.0)["points_per_turn"]), before, 0.001,
-		"raising trees_per_turn must not add rocks")
-	_cfg.trees_per_turn = trees_before
-
-
-
-# --- Grouping ---------------------------------------------------------------------
-
-# Rocks scatter as clusters, not individuals: each scatter point is a GROUP ANCHOR that
-# fans out into several boulders. Asserts the contract (every anchor yields at least
-# min and at most max, anchor included) for ANY authored group size.
-func test_cluster_expands_every_anchor_into_a_group() -> void:
-	var anchors := PackedVector2Array([
-		Vector2(0.0, 0.0), Vector2(80.0, 12.0), Vector2(-40.0, 55.0),
-	])
-	for lo in [2, 3]:
-		for hi in [4, 6]:
-			var out := TreeScatter.cluster(anchors, lo, hi, 6.0, 99)
-			assert_gte(out.size(), anchors.size() * lo,
-				"every anchor must yield at least the minimum group size")
-			assert_lte(out.size(), anchors.size() * hi,
-				"no anchor may exceed the maximum group size")
-
-
-# The anchor itself stays a rock, so a group is the anchor plus companions — otherwise
-# the scatter's careful road/lake rejection of that exact point would be wasted.
-func test_cluster_keeps_the_anchor_position() -> void:
-	var anchor := Vector2(21.0, -7.0)
-	var out := TreeScatter.cluster(PackedVector2Array([anchor]), 2, 4, 5.0, 7)
-	assert_true(out.has(anchor), "the anchor point should survive into the group")
-
-
-# "Close proximity" is the whole point: a companion must land within the group radius
-# of its anchor, or the cluster stops reading as one outcrop.
-func test_cluster_members_stay_within_the_group_radius() -> void:
-	var anchor := Vector2(10.0, 10.0)
-	var radius := 6.0
-	var out := TreeScatter.cluster(PackedVector2Array([anchor]), 4, 4, radius, 3)
-	for p in out:
-		assert_lte(anchor.distance_to(p), radius + 0.001,
-			"a group member escaped its cluster radius")
-
-
-# Companions sit on a jittered RING, not a uniform disc, specifically so metre-wide
-# boulders don't land on top of each other. Assert they are actually separated from the
-# anchor rather than stacked on it.
-func test_cluster_companions_do_not_stack_on_the_anchor() -> void:
-	var anchor := Vector2(-3.0, 14.0)
-	var out := TreeScatter.cluster(PackedVector2Array([anchor]), 4, 4, 8.0, 11)
-	var away := 0
-	for p in out:
-		if anchor.distance_to(p) > 0.001:
-			away += 1
-	assert_eq(away, out.size() - 1,
-		"every companion should be offset from the anchor, leaving only the anchor itself")
-
-
-# Same seed, same clusters — the scatter is a pure hash, and world generation is
-# reproducible from cfg.track_seed.
-func test_cluster_is_deterministic_for_a_seed() -> void:
-	var anchors := PackedVector2Array([Vector2(4.0, 9.0), Vector2(-22.0, 3.0)])
-	var a := TreeScatter.cluster(anchors, 2, 4, 6.0, 1234)
-	var b := TreeScatter.cluster(anchors, 2, 4, 6.0, 1234)
-	assert_eq(a, b, "the same seed must produce the same clusters")
-
-
-# An inverted min/max is an authoring slip, not a reason to produce nothing.
-func test_cluster_survives_an_inverted_group_range() -> void:
-	var out := TreeScatter.cluster(PackedVector2Array([Vector2.ZERO]), 4, 2, 5.0, 5)
-	assert_eq(out.size(), 4, "max below min should degrade to a fixed group size")
-
-
-func test_cluster_of_nothing_is_nothing() -> void:
-	assert_eq(TreeScatter.cluster(PackedVector2Array(), 2, 4, 6.0, 1).size(), 0)
-
-
-# Spawn one rock field on a flat terrain under an autofreed host. The terrain is freed
-# here rather than in each test, so a test can never leak one by forgetting.
+# Spawn one rock field on flat ground under an autofreed host.
 func _spawn(points: PackedVector2Array, index := 0, with_collision := true) -> TreeMeshField:
 	var host := Node3D.new()
 	add_child_autofree(host)
-	var terrain := TerrainManager.flat()
-	var field := Foliage.spawn_rocks(host, points, terrain, index, with_collision,
+	return Foliage.spawn_rocks(host, points, _FlatGround.new(), index, with_collision,
 		120.0, 15.0)
-	terrain.free()
-	return field
 
 
 # --- Collision --------------------------------------------------------------------
@@ -276,89 +183,6 @@ func test_rocks_can_spawn_without_collision() -> void:
 func test_empty_rock_scatter_builds_nothing() -> void:
 	var field := _spawn(PackedVector2Array())
 	assert_null(field.get_node_or_null("Collision"))
-
-
-# --- Integration ------------------------------------------------------------------
-
-# Everything above tests the pieces in isolation, which a silently-disconnected
-# _build_rocks would still pass. This one builds the REAL world and asserts rocks
-# actually reached it, with hitboxes.
-#
-# Built once in before_all, not per test: a full world generation is ~15 s
-# (features/testing.md), and building it inside a test body also attributes every
-# script-compile warning in the project to that test, which GUT counts as a failure.
-var _world: Node = null
-
-
-func before_all() -> void:
-	Config.reset()
-	var cfg: GameConfig = Config.data
-	cfg.track_turn_count = 1
-	cfg.trees_per_turn = 0        # trees/bushes are not what this asserts
-	_world = load("res://main.tscn").instantiate()
-	add_child(_world)
-	# The rock fields are added during the awaited generation chain, so poll for them
-	# rather than guessing a frame count.
-	for _i in range(600):
-		await wait_frames(1)
-		if _rock_fields().size() > 0:
-			break
-
-
-func after_all() -> void:
-	if _world != null:
-		_world.free()
-		_world = null
-	Config.reset()
-
-
-# Every rock field currently on the stage. A species whose partition drew no points is
-# deliberately not spawned at all, so the set is whatever actually made it.
-func _rock_fields() -> Array:
-	var out: Array = []
-	if _world == null:
-		return out
-	for i in range(Foliage.ROCK_SCENES.size()):
-		var field := _world.get_node_or_null("Rocks%d" % i)
-		if field != null:
-			out.append(field)
-	return out
-
-
-func test_rocks_reach_a_generated_stage_with_collision() -> void:
-	var fields := _rock_fields()
-	assert_gt(fields.size(), 0,
-		"no rock field reached the stage — _build_rocks is not wired into generation")
-	var with_bodies := 0
-	for f in fields:
-		var field := f as TreeMeshField
-		if field.instance_positions.size() > 0 \
-				and field.get_node_or_null("Collision") != null:
-			with_bodies += 1
-	assert_gt(with_bodies, 0, "rock fields spawned but none carried a collision body")
-
-
-# A species that draws no points must not leave an EMPTY field behind. test_smoke asserts
-# every foliage field has at least one bin, so a bin-less rock field breaks an invariant
-# well away from this file — assert it here too, where the cause is obvious.
-func test_no_rock_field_is_empty() -> void:
-	for f in _rock_fields():
-		var field := f as TreeMeshField
-		assert_gt(field.bin_count, 0,
-			"%s was spawned with no bins — skip empty species instead" % field.name)
-		assert_gt(field.instance_positions.size(), 0,
-			"%s was spawned with no rocks in it" % field.name)
-
-
-# The clustering is what makes rocks arrive in groups on a REAL stage, not just in the
-# pure helper: with 2-4 per anchor, a stage carrying rocks at all should carry more of
-# them than it has clusters. Counts rocks, asserts nothing about where they landed.
-func test_a_generated_stage_carries_grouped_rocks() -> void:
-	var total := 0
-	for f in _rock_fields():
-		total += (f as TreeMeshField).instance_positions.size()
-	assert_gte(total, Config.data.rock_group_min,
-		"a stage with rocks should carry at least one whole group")
 
 
 # --- Deep snow buries props ----------------------------------------------------

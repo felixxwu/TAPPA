@@ -1,5 +1,5 @@
 extends VehicleBody3D
-# Docs: features/car-physics.md, features/lakes.md, features/stage.md — update in the same change as this file.
+# Docs: features/car-physics.md — update in the same change as this file.
 # Tests: tests/headless/test_car.gd, tests/headless/test_car_types.gd, tests/headless/test_hud.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'car' tests/headless/` and read the assertions that pin what you are about to change (11 test files touch this script).
 
 ## Car scene path lives in Scenes.CAR (scripts/scenes.gd); loaded via Scenes.car_scene()
@@ -125,23 +125,20 @@ var _visible_bump_y: Dictionary = {}  # wheel -> highest local y its tyre is dra
 var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
 
 # When true, driver input is ignored and the handbrake is forced on, so the car
-# physically holds still (e.g. staged at the start line, or after the finish).
-# Set by StageManager; the rest of the simulation (drag, suspension, camera) keeps
-# running so the car settles naturally. See todo/stage-start-and-end.md §2.
+# physically holds still (e.g. while a menu owns the input). The rest of the
+# simulation (drag, suspension, camera) keeps running so the car settles naturally.
 var controls_locked := false
 
-# When true (set by StageManager on crossing the finish, alongside controls_locked),
-# the car brakes itself to a stop: full foot brake + the forced handbrake while it's
+# When true (alongside controls_locked), the car brakes itself to a stop: full foot brake + the forced handbrake while it's
 # still rolling, then the foot brake releases once stopped. The engine clutch stays
 # ENGAGED through the stop so the engine winds down with the braking wheels (the
 # auto-clutch opens at standstill), instead of free-revving on the handbrake's open
-# clutch. Cleared on re-arm (setup / a car swap). See features/stage.md.
+# clutch. Cleared on re-arm (setup / a car swap).
 var finish_stop := false
 
 # When true, the handbrake is forced on but driver input is otherwise LIVE — the
 # player can rev the engine (the held handbrake opens the clutch, so revs climb
-# freely) and steer, then launch the instant the brake releases. Used during the
-# countdown so the player can pull away at full revs on GO. Set by StageManager.
+# freely) and steer, then launch the instant the brake releases.
 var handbrake_locked := false
 
 # Scripted ("AI") control for non-player cars (the level replay, the free-roam wreck).
@@ -253,6 +250,12 @@ func _ready() -> void:
 	var cabin_mesh := $Cabin as MeshInstance3D
 	if cabin_mesh.mesh != null:
 		cabin_mesh.mesh = cabin_mesh.mesh.duplicate()
+	# The box body is what a car with no glb model shows, so it is coloured and lit here.
+	for pair in [[chassis_mesh, cfg.chassis_color], [cabin_mesh, cfg.cabin_color]]:
+		var box_mat := (pair[0] as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+		if box_mat != null:
+			box_mat.set_shader_parameter("albedo_color", pair[1])
+			cfg.apply_car_light(box_mat)
 	# The chassis collision BoxShape3D is a shared sub-resource too (car.tscn
 	# shape_chassis). _apply_body_meshes now swaps in a per-instance
 	# ConvexPolygonShape3D (the chamfered-octagon hull), which is inherently isolated,
@@ -284,8 +287,7 @@ func _ready() -> void:
 	exhaust_locals = cfg.exhaust_locals_for({})
 
 
-# First sibling exposing `method` (the Floor in the main scene; null on the flat
-# test fixtures). Shared by the terrain lookups below.
+# First sibling exposing `method` (null on the flat test fixtures). Shared by the terrain lookups below.
 func _sibling_with_method(method: String) -> Node:
 	var parent := get_parent()
 	if parent != null:
@@ -296,8 +298,7 @@ func _sibling_with_method(method: String) -> Node:
 
 
 # Terrain surface height at a world position, used to seat the spawn above the
-# ground. Looks for a sibling that exposes height_at (the hilly Floor in the
-# main scene); on the flat test fixtures (a WorldBoundary at y=0) there is none,
+# ground. Looks for a sibling that exposes height_at; on the flat test fixtures (a WorldBoundary at y=0) there is none,
 # so it falls back to 0.
 func _ground_height_at(pos: Vector3) -> float:
 	var floor_node := _sibling_with_method("height_at")
@@ -378,14 +379,6 @@ func _recompute_axles() -> void:
 		_front_axle += p / fronts.size()
 	for p in rears:
 		_rear_axle += p / rears.size()
-
-
-# Soft-hazard water predicate, wired by world.gd from the LakeField: takes the
-# chassis world position and returns whether it's in a lake. Empty ⇒ no water.
-var _water_query: Callable = Callable()
-
-func set_water_query(q: Callable) -> void:
-	_water_query = q
 
 
 func _physics_process(delta: float) -> void:
@@ -588,7 +581,7 @@ func _resolve_drive_inputs(engine, speed: float, steer_demand: float) -> Diction
 	return _inputs_scratch
 
 
-# True when the driver is asking for forward throttle — read by TrackProgress' stuck
+# True when the driver is asking for forward throttle — read by the stuck-car
 # watchdog to tell "flooring it and going nowhere" from a car parked on purpose. Mirrors
 # the throttle source in _resolve_drive_inputs; false while the car is held at the
 # line — controls_locked (staging / post-finish) OR handbrake_locked (the 3·2·1
@@ -612,10 +605,6 @@ func _apply_aero() -> void:
 	# Faded in over the first 1 m/s so a parked car isn't pushed back and forth.
 	var rolling := cfg.rolling_resistance * mass * 9.8 * wheels_in_contact() / 4.0
 	apply_central_force(-linear_velocity.limit_length(1.0) * rolling)
-	# Soft hazard: extra linear drag while in a lake — the car slows but can drive
-	# out (no reset). See features/lakes.md.
-	if _water_query.is_valid() and _water_query.call(global_position):
-		apply_central_force(-linear_velocity * cfg.water_drag)
 	_apply_deep_snow_drag(cfg)
 	var v2 := linear_velocity.length_squared()
 	var down := -global_transform.basis.y
@@ -645,36 +634,20 @@ var _wind_gust := 0.0
 var _wind_dir := Vector3.ZERO   # unit world heading, trig done once at resolve time
 var _wind_id := "￿"        # sentinel: never a real weather id, so the first tick resolves
 var _wind_cfg: GameConfig = null
-var _progress: Node = null      # the sibling TrackProgress (distance along the stage)
-var _progress_retry := 0        # physics ticks until the next look for a TrackProgress
-var _wind_odometer := 0.0       # metres driven, keying the gust where there is no stage (free roam)
+var _wind_odometer := 0.0       # metres driven, keying the gust
 
 
 # A lateral force in a FIXED WORLD direction, so the car is blown off line and has to
 # be steered against — not a drag term that rotates with the car. Its magnitude is a
-# pure function of DISTANCE ALONG THE STAGE and the event seed (scripts/crosswind.gd),
-# so every run of a stage meets the same gust in the same place; see that file's header
-# for why leaderboard parity depends on it. Applied here, with the other chassis body
+# pure function of distance driven and the seed (scripts/crosswind.gd). Applied here, with the other chassis body
 # forces, so it composes with the existing physics instead of fighting it.
 func _apply_crosswind(cfg: GameConfig) -> void:
 	if cfg.weather != _wind_id or cfg != _wind_cfg:
 		_resolve_wind(cfg)
 	if not _wind_active:
 		return
-	# On a stage the gust is keyed to TrackProgress's along-track distance, the same metric
-	# the HUD uses; free roam has no stage, so it runs on the car's own odometer. The lookup
-	# retries about once a second, since TrackProgress is built after the car exists.
-	if _progress == null:
-		_progress_retry -= 1
-		if _progress_retry <= 0:
-			_progress_retry = Engine.physics_ticks_per_second
-			_progress = _sibling_with_method("progress_offset")
-	var distance := _wind_odometer
-	if _progress != null:
-		distance = _progress.progress_offset()
-	else:
-		_wind_odometer += Vector2(linear_velocity.x, linear_velocity.z).length() * get_physics_process_delta_time()
-	var magnitude := Crosswind.magnitude_at(distance, cfg.track_seed,
+	_wind_odometer += Vector2(linear_velocity.x, linear_velocity.z).length() * get_physics_process_delta_time()
+	var magnitude := Crosswind.magnitude_at(_wind_odometer, cfg.track_seed,
 		_wind_strength, _wind_gust, cfg.crosswind_gust_wavelength_m)
 	# Exposure: a broadside car catches more wind than a nose-on one. Deliberately a
 	# constant-ish factor, NOT an occlusion/shelter model (see features/car-physics.md).
@@ -1122,7 +1095,7 @@ func _reset() -> void:
 
 
 # Reset the car to an arbitrary pose with motion zeroed — shared by the manual
-# reset and the off-track recovery (TrackProgress). Restores velocities, wheel
+# reset and the off-road recovery. Restores velocities, wheel
 # spin and engine state so the car drops in cleanly rather than carrying over
 # stale momentum.
 # Static-friction hold for a nearly-stopped, fully-braked car so it doesn't slowly creep
@@ -1157,7 +1130,7 @@ func _reset() -> void:
 # stiffens the body and kills body roll dead.
 func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
 	# Only hold once the car is actually resting on the ground — a boot-locked car
-	# (StageManager forces the handbrake) must be free to drop onto its wheels first.
+	# (handbrake forced on) must be free to drop onto its wheels first.
 	if not (braked and speed < config.handbrake_lock_speed and is_grounded()) or delta <= 0.0:
 		_hold_anchor_set = false
 		return
@@ -2076,8 +2049,7 @@ func _body_material(texture: Texture2D) -> ShaderMaterial:
 	mat.set_shader_parameter("texture_tile", Vector2(1, 1))
 	mat.set_shader_parameter("albedo_color", Color.WHITE)
 	mat.set_shader_parameter("albedo_texture", texture)
-	# Same fake per-vertex lighting as the procedural car meshes (see
-	# world.gd) so the authored body gets shape too, not just flat colour.
+	# Fake per-vertex lighting so the authored body gets shape too, not just flat colour.
 	config.apply_car_light(mat)
 	return mat
 
@@ -2215,17 +2187,13 @@ func _model_albedo(model: Node3D) -> Texture2D:
 
 
 # A ShaderMaterial for the tire caps using `tex_path` (a wheel.png), or a blank dark
-# disc when empty. albedo_color (the rubber tread) is left at the shader default;
-# world.gd repaints it live, same as before.
+# disc when empty.
 func _wheel_material(tex_path: String) -> ShaderMaterial:
 	if _wheel_mats.has(tex_path):
 		return _wheel_mats[tex_path]
 	var mat := ShaderMaterial.new()
 	mat.shader = WHEEL_SHADER
 	mat.set_shader_parameter("albedo_texture", _blank_wheel_texture() if tex_path == "" else load(tex_path))
-	# The tread colour + PS1 fake lighting that world.gd used to push onto the shared
-	# tire material — now carried by each per-car material (world.gd's push lands on the
-	# scene's default material, which apply_car replaces with this).
 	mat.set_shader_parameter("albedo_color", config.wheel_color)
 	config.apply_car_light(mat)
 	_wheel_mats[tex_path] = mat

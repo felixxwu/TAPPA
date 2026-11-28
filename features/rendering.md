@@ -390,7 +390,7 @@ model. Each per-car material also carries the tread `albedo_color`
 
 ## Materials & colors
 
-`world.gd._ready()` pushes config colors into the shared shader materials:
+`car.gd._ready()` colours and lights the box body (`Chassis` / `Cabin`); the rest is set where noted:
 
 | Node | Param | Config |
 |------|-------|--------|
@@ -398,7 +398,6 @@ model. Each per-car material also carries the tread `albedo_color`
 | Car/Cabin | `albedo_color` | `cabin_color` (dark blue) |
 | Wheels (all 4) | `albedo_color` | `wheel_color` (black) — now carried by each per-car tire material (see "Per-car wheel-cap textures") |
 | Car meshes + authored body | fake-light uniforms | Lighting group (`cfg.apply_car_light`) |
-| Floor (terrain) | baked vertex-colour shading | Lighting group (`cfg.apply_terrain_light`) |
 | PostProcess (SubViewportContainer) | `virtual_resolution` | `cfg.virtual_resolution` |
 
 ### `weather_lit` — the shared rule for fake lighting
@@ -470,17 +469,7 @@ this shader, grep for the literal `Color(0.55, 0.52, 0.48)` to catch a repeat.
   height. Dropping in a new sky: run the tool (it rolls the image and prints the
   `sun_direction` to paste into `GameConfig`). The roll is a pure yaw, so the
   horizon stays level. (HQ uses its own `DirectionalLight3D`, independent of this.)
-- **Distant terrain** (`scripts/distant_terrain.gd`, `DistantTerrain`): a coarse,
-  collision-free backdrop of static `250 m` tiles sampling the same
-  `height_at`/`light_at` as the real terrain, covering the whole precomputed
-  corridor (`TerrainManager.corridor_bounds()`) plus a margin so the reduced
-  fog reveals a horizon instead of the ring's hard edge. Built **once**, behind
-  the loading screen, in `world._generate_track()` — the play area is bounded by the
-  precomputed corridor, so it never re-centres or rebuilds at runtime (see
-  [terrain.md](terrain.md) for the caveat on a car that outruns it). Tunables in
-  `GameConfig` (`distant_terrain_*`).
-- **Fog** demoted from edge-hider to thin aerial haze now that the backdrop hides
-  the edge: `fog_density` (0.012), `fog_sky_affect` (0.15, so the sky reads above
+- **Fog** is thin aerial haze, not an edge-hider: `fog_density` (0.012), `fog_sky_affect` (0.15, so the sky reads above
   the haze), `fog_light_color = background_color` — and `background_color`
   (0.589, 0.544, 0.520) is **matched to the skybox's horizon** so the distant
   terrain dissolves into the sky seam. All applied in `world._ready()` from config.

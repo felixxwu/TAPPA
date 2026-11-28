@@ -86,13 +86,13 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 	b.source_key = key
 	b.size = data.size
 	b.n = roundi(b.size / b.step) + 1
-	var step := b.size / (b.n - 1)
+	var spacing := b.size / (b.n - 1)
 	var hs := PackedFloat32Array()
 	hs.resize(b.n * b.n)
 	for r in b.n:
 		progress = 0.5 * r / b.n
 		for c in b.n:
-			hs[r * b.n + c] = data.ground(c * step - b.size / 2, r * step - b.size / 2)
+			hs[r * b.n + c] = data.ground(c * spacing - b.size / 2, r * spacing - b.size / 2)
 	b.height_base = hs[0]
 	for h in hs:
 		b.height_base = minf(b.height_base, h)
@@ -198,13 +198,13 @@ func is_incomplete() -> bool:
 
 # "" when every row only names real trees and mostly trees within `reach` of its viewpoint, else what is wrong; catches a broken visibility render.
 func visibility_problem(reach: float) -> String:
-	var n := tree_count()
+	var trees := tree_count()
 	for r in vis_row_count():
 		var ids := visible_in(r, -0x7fffffff, 0x7fffffff)
 		if ids.is_empty():
 			continue
-		if ids[0] < 0 or ids[ids.size() - 1] >= n:
-			return "row %d holds a tree id outside 0..%d" % [r, n - 1]
+		if ids[0] < 0 or ids[ids.size() - 1] >= trees:
+			return "row %d holds a tree id outside 0..%d" % [r, trees - 1]
 		var i := r * vis_every
 		if i >= sx.size():
 			continue
@@ -212,7 +212,7 @@ func visibility_problem(reach: float) -> String:
 		for id in ids:
 			if Vector2(tree_xf[id * 12 + 3] - sx[i], tree_xf[id * 12 + 11] - sz[i]).length() > reach:
 				far += 1
-		if far > maxi(2, ids.size() / 20):
+		if far > maxi(2, int(ids.size() / 20.0)):
 			return "row %d: %d of its %d trees are beyond %.0f m of its viewpoint" % [r, far, ids.size(), reach]
 	return ""
 
@@ -449,8 +449,8 @@ static func _zip(raw: PackedByteArray) -> PackedByteArray:
 
 
 static func _unzip(z: PackedByteArray) -> PackedByteArray:
-	var size := z.decode_u32(0) if z.size() >= 4 else 0
-	return z.slice(4).decompress(size, FileAccess.COMPRESSION_ZSTD) if size > 0 else PackedByteArray()
+	var raw_size := z.decode_u32(0) if z.size() >= 4 else 0
+	return z.slice(4).decompress(raw_size, FileAccess.COMPRESSION_ZSTD) if raw_size > 0 else PackedByteArray()
 
 
 # Differences between neighbours with each byte of them in its own plane: smooth data turns into long runs of zeros that zstd squeezes.
@@ -549,7 +549,7 @@ func _set(property: StringName, value: Variant) -> bool:
 		&"z_frame": frame = _unzip(value)
 		&"z_road":
 			var raw := _unzip(value)
-			var count := raw.size() / 28
+			var count := int(raw.size() / 28.0)
 			sx = raw.slice(0, count * 4).to_float32_array()
 			sz = raw.slice(count * 4, count * 8).to_float32_array()
 			sw = raw.slice(count * 8, count * 12).to_float32_array()
@@ -562,12 +562,12 @@ func _set(property: StringName, value: Variant) -> bool:
 			patches.clear()
 			var i := 0
 			while i < flat.size():
-				var n := int(flat[i])
+				var points := int(flat[i])
 				var poly := PackedVector2Array()
-				for k in n:
+				for k in points:
 					poly.append(Vector2(flat[i + 1 + k * 2], flat[i + 2 + k * 2]))
 				patches.append(poly)
-				i += 1 + n * 2
+				i += 1 + points * 2
 		&"z_trees": tree_xf = _unzip(value).to_float32_array()
 		&"z_tree_first": tree_tile_first = _unzip_ints(value)
 		&"z_tree_kind": tree_kind = _unzip(value)

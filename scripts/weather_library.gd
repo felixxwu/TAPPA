@@ -42,7 +42,7 @@ extends RefCounted
 #                              (a plain darkening). Omitted entirely => the road albedo
 #                              is left alone. A condition tinting toward a new colour
 #                              (dust, snow) is therefore pure authoring: name a colour
-#                              field, no world.gd change.
+#                              field, no consumer change.
 #   "wind"           Dict    — a LATERAL CROSSWIND force on the car body, mapping
 #                              "strength"/"gust"/"dir_deg" to GameConfig fields (see
 #                              WIND_KEYS). Omitted => no wind force at all. Read by
@@ -65,15 +65,15 @@ extends RefCounted
 #   "lightning"      Dict    — an occasional cosmetic flash, mapping "flash"/
 #                              "duration"/"interval_min"/"interval_max" to GameConfig
 #                              fields (see LIGHTNING_KEYS). Omitted => no flashes.
-#                              Read by world.gd._start_lightning. Cosmetic.
+#                              Cosmetic.
 #
 # ADDING A CONDITION: add its GameConfig fields to game_config.gd + game_config.gd,
 # add one entry here naming them, and author `"weather": "<id>"` on the events that
 # should run it. No consumer changes.
 
 # The environment knobs a "look" block may supply, each mapped to a GameConfig field
-# name. A look block authors ALL of these or none — world.gd._apply_weather_look
-# reads them as a set. (Deliberately NOT a place for numbers; see the header.)
+# name. A look block authors ALL of these or none — they
+# are read as a set. (Deliberately NOT a place for numbers; see the header.)
 const LOOK_KEYS := [
 	"background_color", "sky_color", "sun_energy_mult",
 	"fog_density_mult", "fog_sky_affect",
@@ -314,8 +314,8 @@ const WETNESS := {
 # so a typo'd or removed condition is dry rather than a crash. A condition installed by
 # override_for_test() that WETNESS does not name is likewise dry.
 # A ground colour as a condition's road tint leaves it: lerped `amount` toward `toward` when
-# `blend` (dust caking on), else multiplied by `amount` (a wet road darkens). Shared by the
-# stage (world.gd) and the level (LevelWeather).
+# `blend` (dust caking on), else multiplied by `amount` (a wet road darkens). Used by the
+# level (LevelWeather).
 static func tinted(col: Color, amount: float, toward: Color, blend: bool) -> Color:
 	if blend:
 		return col.lerp(Color(toward.r, toward.g, toward.b, col.a), amount)
@@ -341,7 +341,7 @@ static func wet_ids() -> Array:
 # Sub-keys of a "road_tint" block, in a stable order — both name GameConfig fields.
 # "color" is OPTIONAL: without it the road albedo is multiplied by "amount" (darkened);
 # with it the albedo is lerped toward that colour by "amount". This is what keeps the
-# per-condition tan/darken special case OUT of world.gd.
+# per-condition tan/darken special case OUT of code.
 const ROAD_TINT_KEYS := ["amount", "color"]
 
 # Sub-keys of a "wind" block, in a stable order — the GameConfig fields the crosswind

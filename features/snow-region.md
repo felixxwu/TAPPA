@@ -3,15 +3,12 @@
 The one region that does more than look different: it influences **handling**. In free roam it
 is the outermost biome ring; on the dev stage it is a region's stage grid.
 
-**Tests:** `tests/headless/test_snow_region.gd`, `tests/headless/test_deep_snow_drag.gd`, `tests/headless/test_lake_field.gd`
+**Tests:** `tests/headless/test_snow_region.gd`, `tests/headless/test_deep_snow_drag.gd`
 
 - **Region entry:** `scripts/region_library.gd` → `REGIONS` id `"snow"`
 - **Handling seat:** `BiomeDirector.apply_handling`
 - **Grip:** `Drivetrain.surface_tire_params`
-- **Deep snow:** `shaders/ps1_terrain_snow.gdshader`, `WorldRuntime.apply_deep_snow`
-  (via `world.gd._apply_deep_snow_ground`),
-  `car.gd._apply_deep_snow_drag`
-- **Frozen lakes:** `LakeField.build` / `_add_ice_collider`
+- **Deep snow:** `shaders/level_ground.gdshader` (`snow_depth_m`), `car.gd._apply_deep_snow_drag`
 - **Snowfall:** `WeatherLibrary` id `"snow"`, `WeatherField.spawn_snow`
 - **Art:** `tools/gen_snow_textures.py` (ground/sky), `tools/gen_snow_trees.py` (conifers)
 - **Design:** `docs/superpowers/specs/2026-08-16-snow-region-design.md`
@@ -21,7 +18,7 @@ is the outermost biome ring; on the dev stage it is a region's stage grid.
 1. **The look** is pure existing machinery — `LOOK_KEYS` only, no code.
 2. **Snowfall** is one `WeatherLibrary` entry plus one particle kind.
 3. **Grip** is the new axis: a region may now override per-surface μ.
-4. **Deep snow and frozen lakes** are the genuinely new mechanics.
+4. **Deep snow** is the genuinely new mechanic.
 
 ## Grip is a region property, not a weather one
 
@@ -31,12 +28,12 @@ Weather is per-event; "this corner is frozen" is per-region. Routing grip throug
 `WeatherLibrary` would have forced every Alps event to carry `weather: "snow"`, throwing
 away the variety the region exists to provide.
 
-**Nor is ice a new surface type.** There is no surface enum: `TerrainManager.surface_at`
+**Nor is ice a new surface type.** There is no surface enum: `LevelView.surface_at`
 returns continuous weights (road 0..1, tarmac 0..1) and `Drivetrain._surface_blend`
 resolves them over exactly three configured values. "Snow gravel" and "snow tarmac" are
 not new types, they are those same endpoints wanting **different μ**. Adding real types
 would have meant a third weight axis through `surface_at`, the blend, `tire_marks`,
-`wheel_particles`, `road_markings` and `barrier_layout` — and bought nothing, since snow-gravel and ordinary gravel never
+and `wheel_particles` — and bought nothing, since snow-gravel and ordinary gravel never
 coexist on a stage.
 
 ### The config-block indirection
@@ -47,15 +44,13 @@ A region **names GameConfig fields**; it never authors numbers. Same pattern as
 ```gdscript
 "surface_grip": {"grass": "snow_grass_grip", "gravel": "snow_gravel_grip",
                  "tarmac": "snow_tarmac_grip"},
-"deep_snow":    {"depth": "snow_visual_depth_m", "drag": "snow_deep_drag"},
-"frozen_water": {"grip": "ice_grip"},
+"deep_snow":    {"depth": "snow_visual_depth_m", "drag": "snow_deep_drag"}
 ```
 
-All three are **outside `LOOK_KEYS`**, for the reason `water_level` is: they are consumed
-at stage setup, not by `world.gd`'s look pass after generation. `look_from` inheritance
+Both are **outside `LOOK_KEYS`**: they are handling, not look. `look_from` inheritance
 does not extend to them.
 
-API is `surface_grip_of`, `deep_snow_of` and `frozen_water_of`, each `{}` when the region
+API is `surface_grip_of` and `deep_snow_of`, each `{}` when the region
 authors nothing.
 
 `_resolve_fields` returns values **un-coerced**. An earlier version wrapped them in
@@ -65,8 +60,7 @@ have, instead of silently yielding 0.0 — which would read as "no grip at all".
 
 ### Seating it
 
-`BiomeDirector.apply_handling` resolves the ring's region and re-seeds grip, deep snow and
-frozen water from the authored baseline on every ring change, so a non-snow ring gets
+`BiomeDirector.apply_handling` resolves the ring's region and re-seeds grip and deep snow from the authored baseline on every ring change, so a non-snow ring gets
 baseline grip and a zero deep-snow block and one ring's slippery override cannot leak into
 the next.
 
@@ -101,11 +95,6 @@ drop the ground away BESIDE the road without touching the lengthwise profile the
 to climb, so the corner still reads as a high massif while staying drivable. If the Alps
 ever need more drama, reach for cliffiness, not amplitude.
 
-Consequence worth knowing: less relief means fewer deep hollows for the waterline to fill,
-so **frozen lakes are rarer here than they were**. The waterlines were left at -12/-13
-(the "up in the foothills" rung of the roster's ladder) rather than raised to chase the
-ice back, because a high sea over low relief floods the track.
-
 Off-road wheel spray is square here, not blade-shaped: the region authors
 `grass_particle_square` (see [wheel-dust.md](wheel-dust.md)). Colouring the grass blade
 white was not enough — a snowfield throws clods of powder, and the slim tall sliver read
@@ -116,45 +105,12 @@ as white grass being torn up.
 Two effects doing two different jobs: low μ makes the car **slide**, drag makes it
 **bog**. Neither alone reads as deep snow.
 
-### The sink — a separate shader, not a uniform
+### The sink
 
-`shaders/ps1_terrain_snow.gdshader` is `ps1_models.gdshader` plus one vertex stage that
-raises the ground off-road by `snow_depth`, weighted by how far off the road a vertex is:
-
-- **Free roam** (`paint_road_per_pixel` on): the weight comes from the road distance baked
-  into `UV` (`max(|UV.x|, UV.y)`), `smoothstep`ped from where the road paint ends
-  (`road_paint_mid_m + road_paint_half_m`) out over `snow_bank_m`
-  (`GameConfig.snow_bank_width_m`). The bank is that wide because the near mesh is a 2 m grid.
-- **Stage** (`main.tscn`): `1 - COLOR.a`, the baked road weight, whose feather is the ramp.
-
-Either way the road is never lifted and the step reads as a plough bank at the verge.
-Collision is a separate `HeightMapShape3D` and is untouched, so the wheels rest at true
-ground level and the car sits *in* the snow.
-
-The island's snow ring and its biome-border fade (`snow_depth_b`) were deleted with the island in
-November 2026; the shader keeps the uniforms.
-
-**Why a variant shader.** `ps1_models` is the shared terrain shader, terrain is the
-heaviest geometry in the game, and this renderer targets low-end phones — so it is
-deliberately kept free of any vertex stage, enforced by
-`test_render_smoke.gd::test_terrain_shader_has_no_vertex_stage`. The established answer
-here is a variant, exactly what `ps1_models_lit.gdshader` already is for the car. Only
-snow ground pays. **Everything but the vertex stage is a copy of `ps1_models`**: change the
-two together. `test_render_smoke.gd::test_snow_terrain_shader_matches_the_base_shader` fails
-when the uniforms or the fragment stage drift (the copy had silently fallen behind the
-free-roam per-pixel road paint before that test existed).
-
-It is also not done in `terrain_chunk_builder`: chunk data is cached with a prebuilt
-`HeightMapShape3D`, so a region-dependent vertex offset would have to be keyed into that
-cache and agree across every LOD subsample.
-
-⚠️ `world.gd._apply_deep_snow_ground` → `WorldRuntime.apply_deep_snow`
-(`scripts/world_runtime.gd`) runs **unconditionally every stage boot**, including
-the else-branch that restores the base shader. The floor material is a shared
-sub-resource of `main.tscn` with no `resource_local_to_scene`, so it survives every scene
-instantiation in the process — the same trap that once left the ground at
-`rain_road_darken²`. Without the restore, one snow stage would leave every later stage's
-ground floating.
+`level_ground.gdshader` raises the ground off-road by `snow_depth_m`, weighted by how far off
+the road a vertex is (see *The level view's snow biome* below). The road is never lifted and the
+step reads as a plough bank at the verge. Collision is separate and untouched, so the wheels rest
+at true ground level and the car sits *in* the snow.
 
 **Props are buried on purpose.** Trees, bushes, rocks, signs and barriers are placed from
 collision heights and are NOT lifted onto the drawn snow, so off-road they sit sunk by
@@ -188,8 +144,7 @@ things about it are load-bearing:
 - **No new terrain queries.** Each contact already carries the road weight
   `surface_tire_params` sampled for it (`Drivetrain.WheelContact.road_weight`), so this
   reads what the tyre solver has already paid for. Airborne wheels have no contact and so
-  cannot bog, which is correct; a contact **on the ice** reports road weight `1.0`, because
-  a frozen lake is something you slide on rather than bog in.
+  cannot bog, which is correct.
 
 Tested in `tests/headless/test_deep_snow_drag.gd` (the force rule: feather, magnitude
 conservation, left/right yaw symmetry, spin damping) and `test_drivetrain.gd` (that the
@@ -209,36 +164,6 @@ biome mask (`biomeRle`, 10 m cells), read by `LevelStreamer.snow_at`, and reuses
   `car.gd._apply_deep_snow_drag` feathers it off the road per wheel as in free roam. `_exit_tree` sets it back to 0.
 - Not carried over: ground cover tufts, which still grow in the snow.
 
-## Frozen lakes
-
-In the Alps the lake is **solid** and driven on, not the soft drag hazard it is elsewhere.
-
-`LakeField._add_ice_collider` adds a **`WorldBoundaryShape3D`** — an infinite half-space
-plane at the waterline. There is no lake geometry in this game (one plane, terrain
-occludes it by depth test), so there is no outline to match; an infinite plane gives the
-right answer anyway, because the terrain collider is still there. Above the waterline the
-car rests on ground; where terrain dips below — exactly where a lake is drawn — it rests
-on the ice. The two colliders reproduce the lake's shape for free, and it is the cheapest
-collider physics has.
-
-- **Grip** overrides the surface blend in `Drivetrain.surface_tire_params` rather than
-  scaling it: what is under the ice is irrelevant. Gated on `frozen_water_grip > 0.0`, so
-  elsewhere it is one float compare on a hot path. It uses the same cache-first height
-  query the collider is positioned against, so the grip boundary and the solid surface
-  agree exactly. The fitted tyre's surface term is still applied on top, and a frozen lake
-  takes the **snow** side of that rule (see below) — a lake is only ever authored by a
-  snowy region, so winter rubber is exactly what should pay off out on the ice.
-- **The water-drag query is not wired** on a frozen stage — dragging a car down on a
-  surface it is meant to slide across is the opposite of the feature.
-- **Look** reuses the water shader with ice colours and `scroll_speed = 0`. Ice does not
-  flow, and stopping the scroll is what separates it from water at a glance. No second
-  shader.
-- Accepted side effect: nothing can fall below the waterline on a frozen stage. On these
-  stages that reads as landing on ice.
-
-The track still routes around water, so the frozen lake is an off-road hazard (or
-shortcut), and PAR times are unaffected.
-
 ## Snowfall
 
 One `WeatherLibrary` entry naming a `snowfall_*` config block — prefixed that way so it
@@ -250,7 +175,7 @@ a snowfall stage arbitrarily slipperier than a dry stage on the same frozen grou
 therefore changes no handling of its own.
 
 `road_tint.color` already generalises to a lerp toward a colour (sandstorm's mechanism), so
-snow settling white on the road needed no `world.gd` change. The one code addition is
+snow settling white on the road needed no new code. The one code addition is
 `WeatherField.spawn_snow`: slow fall, wide spread, small near-square quads, and
 `BILLBOARD_ENABLED` rather than the velocity-aligned billboarding the other kinds use —
 streaking a flake to its own motion is exactly what makes cheap snow look like rain.

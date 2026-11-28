@@ -39,8 +39,8 @@ func test_dry_grip_multiplier_is_exactly_one() -> void:
 
 func test_dry_constructs_nothing() -> void:
 	# The zero-cost contract: dry names no look block, no road tint and no particle
-	# kind, so world.gd._apply_weather_look writes nothing and builds nothing on a
-	# dry stage. This is a hard requirement on the low-end phones the game targets.
+	# kind, so LevelView.apply_weather writes nothing and builds nothing on a
+	# dry level. This is a hard requirement on the low-end phones the game targets.
 	var dry := WeatherLibrary.by_id(WeatherLibrary.DEFAULT_ID)
 	assert_true((dry.get("look", {}) as Dictionary).is_empty(), "dry authors no look block")
 	assert_true((dry.get("road_tint", {}) as Dictionary).is_empty(), "dry tints no road")
@@ -112,7 +112,7 @@ func test_a_visibility_only_condition_has_no_grip_no_particles_and_no_road_tint(
 	# fact is what makes it a pure visibility condition —
 	#   * no "grip_mult"  => grip_mult() is exactly 1.0, identical to dry, so the
 	#     player's tyres are untouched;
-	#   * no "particles"  => world.gd builds no WeatherField at all (the case the
+	#   * no "particles"  => LevelView builds no WeatherField at all (the case the
 	#     table was generalised for — it costs no new code);
 	#   * no "road_tint"  => the road albedo is left alone, unlike a precipitation
 	#     condition, which is correct because a foggy road is DRY.

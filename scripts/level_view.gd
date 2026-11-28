@@ -491,9 +491,9 @@ func _enter_press() -> InputEventAction:
 func _place_service_prompt() -> void:
 	if not is_inside_tree():  # the tree's frame signal still fires while a scene change is removing the level
 		return
-	var shop := shop_at()
+	var at_shop := shop_at()
 	var point := service_at()
-	var want := shop >= 0 or point >= 0
+	var want := at_shop >= 0 or point >= 0
 	if want != _prompt_wanted:
 		_prompt_wanted = want
 		if _prompt_tween != null:
@@ -506,8 +506,8 @@ func _place_service_prompt() -> void:
 		if not want:
 			_prompt_tween.chain().tween_callback(func() -> void: service_prompt.visible = false)
 	if want:
-		_prompt_kind.text = UITheme.caps("Shop" if shop >= 0 else "Delivery point")
-		_prompt_title.text = UITheme.caps(String(level["shops"][shop].get("name", "Shop")) if shop >= 0 else String(level["teleports"][point].get("name", "")))
+		_prompt_kind.text = UITheme.caps("Shop" if at_shop >= 0 else "Delivery point")
+		_prompt_title.text = UITheme.caps(String(level["shops"][at_shop].get("name", "Shop")) if at_shop >= 0 else String(level["teleports"][point].get("name", "")))
 	service_prompt.size = Vector2.ZERO
 	service_prompt.position = ((get_viewport().get_visible_rect().size - service_prompt.size) * 0.5 + Vector2(0.0, _prompt_slide)).round()
 
@@ -538,15 +538,15 @@ func delivery_info(t: Dictionary, m: Dictionary) -> Dictionary:
 
 
 # The road line delivery `m` drives, from teleport point `t` to its drop-off; empty when the drop-off isn't in the level.
-static func delivery_route(level: Dictionary, roads: LevelData, t: Dictionary, m: Dictionary) -> PackedVector2Array:
-	for o: Dictionary in level.get("teleports", []):
+static func delivery_route(lvl: Dictionary, roads: LevelData, t: Dictionary, m: Dictionary) -> PackedVector2Array:
+	for o: Dictionary in lvl.get("teleports", []):
 		if String(o.get("name", "")) == String(m.get("to", "")):
 			return roads.route(Vector2(float(t["x"]), float(t["z"])), Vector2(float(o["x"]), float(o["z"])))
 	return PackedVector2Array()
 
 
-static func delivery_info_on(level: Dictionary, roads: LevelData, t: Dictionary, m: Dictionary) -> Dictionary:
-	var line := delivery_route(level, roads, t, m)
+static func delivery_info_on(lvl: Dictionary, roads: LevelData, t: Dictionary, m: Dictionary) -> Dictionary:
+	var line := delivery_route(lvl, roads, t, m)
 	var km := 0.0
 	for i in range(1, line.size()):
 		km += line[i - 1].distance_to(line[i]) / 1000.0
@@ -857,7 +857,9 @@ func _drive_bought_car(id: String, at: int) -> void:
 	var sh: Dictionary = level["shops"][at]
 	var facing := Vector3.BACK.rotated(Vector3.UP, float(sh["model"].get("yaw", 0.0))) if sh.get("model") is Dictionary else Vector3.FORWARD
 	Config.data.level_car_id = id  # the reload sees `owned` is another car and fields this one (emptying it would restore the saved old car)
-	_next_pose = teleport_pose(Vector2(float(sh["x"]), float(sh["z"])), facing) if _bake != null else null  # right on the obelisk, facing its heading
+	_next_pose = null
+	if _bake != null:
+		_next_pose = teleport_pose(Vector2(float(sh["x"]), float(sh["z"])), facing)  # right on the obelisk, facing its heading
 	_free_store()
 	close_service_state()
 	Scenes.change_to(get_tree(), Scenes.WORLD, "Fetching your car")
@@ -1346,8 +1348,8 @@ func save_pose() -> void:
 
 
 # The saved spot as an upright pose just above the ground, or `fallback` if it was saved on another level.
-func saved_pose(saved: Variant, level: String, fallback: Transform3D) -> Transform3D:
-	if not saved is Dictionary or saved.get("level") != level:
+func saved_pose(saved: Variant, level_file: String, fallback: Transform3D) -> Transform3D:
+	if not saved is Dictionary or saved.get("level") != level_file:
 		return fallback
 	var x := float(saved.get("x", 0.0))
 	var z := float(saved.get("z", 0.0))
@@ -1389,7 +1391,7 @@ func _add_effects(car: VehicleBody3D) -> TireMarks:
 	var marks := TireMarks.new()
 	marks.name = "TireMarks"
 	get_parent().add_child(marks)
-	marks.setup(null, car, self, 0.0)  # no centreline: the marks follow surface_at's road weight, not a width
+	marks.setup(car, self)
 	var flames := ExhaustFlames.new()
 	flames.name = "ExhaustFlames"
 	get_parent().add_child(flames)
@@ -1620,20 +1622,20 @@ func load_level(d: Dictionary) -> void:
 	rallies.setup(d.get("rallies", []), height_at, _spectators, _buildings)
 
 # A roadside timber pile from the save's `logPiles` ({x, z}), sawn ends facing the nearest road, kept clear of its surface.
-func _log_pile(p: Dictionary, seed: int) -> StaticBody3D:
+func _log_pile(p: Dictionary, pile_seed: int) -> StaticBody3D:
 	var at := Vector2(p.x, p.z)
 	var road := road_pose(at, Vector3.FORWARD)
-	var rows := 4 + seed % 3
-	var base := 7 + seed % 4
-	var sections := 1 + seed % 2
+	var rows := 4 + pile_seed % 3
+	var base := 7 + pile_seed % 4
+	var sections := 1 + pile_seed % 2
 	var away := at - Vector2(road.origin.x, road.origin.z)
 	var clear := 7.0
 	if away.length() < clear:
 		at = Vector2(road.origin.x, road.origin.z) + away.normalized() * clear
 	var radius := 0.16
-	var mesh := LogPile.build(seed + 1, seed % 2, rows, base, 4.0, radius, sections)
+	var mesh := LogPile.build(pile_seed + 1, pile_seed % 2, rows, base, 4.0, radius, sections)
 	var body := StaticBody3D.new()
-	body.name = "LogPile%d" % seed
+	body.name = "LogPile%d" % pile_seed
 	body.transform = Transform3D(road.basis.orthonormalized().rotated(Vector3.UP, PI / 2.0), Vector3(at.x, height_at(at.x, at.y) - 0.1, at.y))
 	body.add_child(mesh)
 	var shape := CollisionShape3D.new()

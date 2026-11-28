@@ -159,7 +159,7 @@ func test_a_draw_override_reaches_further_and_clears_back() -> void:
 		var t := _trees.tile(i)
 		if t != null:
 			for mmi in t.mmis:
-				assert_eq(mmi.visibility_range_end, normal + LevelBake.TREE_TILE_M, "every built tile draws to the normal range again")
+				assert_almost_eq(mmi.visibility_range_end, normal + LevelBake.TREE_TILE_M, 0.01, "every built tile draws to the normal range again")
 
 
 func test_without_a_bake_every_tree_in_range_is_drawn() -> void:

@@ -51,7 +51,6 @@ func test_set_aero_visible_null_body_is_noop() -> void:
 	assert_true(true, "null body is a safe no-op")
 
 
-const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 var _scene: Node3D
 
@@ -68,8 +67,8 @@ func _first_model_car() -> Dictionary:
 
 
 func before_each() -> void:
-	SceneHelpers.minimal_world()
-	_scene = load("res://main.tscn").instantiate()
+	Config.reset()
+	_scene = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(_scene)
 
 

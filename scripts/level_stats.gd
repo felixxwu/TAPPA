@@ -136,7 +136,7 @@ func _mesh_tris(mesh: Mesh) -> int:
 		for s in mesh.get_surface_count():
 			var arrays := mesh.surface_get_arrays(s)
 			var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
-			n += (idx.size() if not idx.is_empty() else (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()) / 3
+			n += int((idx.size() if not idx.is_empty() else (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()) / 3.0)
 		_tris[mesh] = n
 	return _tris[mesh]
 

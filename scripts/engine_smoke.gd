@@ -11,8 +11,7 @@ extends CpuParticlePool
 # diagonal) and FADES (per-instance alpha via MultiMesh instance colours) over its
 # life, so it reads as dissipating smoke rather than a hard clod.
 #
-# Created + wired by world.gd (reused across event regenerations, re-targeted on a
-# car swap, exactly like WheelParticles). Emission is driven by EngineSim.misfire_count:
+# Created + wired by level_view.gd, exactly like WheelParticles. Emission is driven by EngineSim.misfire_count:
 # each new cut since last tick puffs one burst. See features/engine-smoke.md.
 
 # Floats per MultiMesh instance for TRANSFORM_3D + COLOR: a 3x4 matrix (origin at

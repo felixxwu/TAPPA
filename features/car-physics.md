@@ -2,7 +2,7 @@
 
 **Source:** `scripts/car.gd` (extends `VehicleBody3D`), scene `car.tscn`.
 
-**Tests:** `tests/headless/test_car.gd`, `tests/headless/test_car_types.gd`, `tests/headless/test_crosswind.gd`, `tests/headless/test_drivetrain.gd`, `tests/headless/test_countdown_hold.gd`
+**Tests:** `tests/headless/test_car.gd`, `tests/headless/test_car_types.gd`, `tests/headless/test_crosswind.gd`, `tests/headless/test_drivetrain.gd`
 
 The car is a Godot `VehicleBody3D`, but its tire friction is custom — see
 [drivetrain-and-tires.md](drivetrain-and-tires.md). `car.gd` owns input
@@ -247,10 +247,7 @@ Why it matters (the original global leaderboards are deleted, but the reasoning
 stands): keying on *distance* rather than time makes gusts **learnable** — the same
 gust waits in the same place every attempt — which is fairer play, and every run of
 the same stage meeting the identical gust keeps stage target times honest against
-the pace line they are computed from. Distance comes from the existing `TrackProgress.progress_offset()` odometer,
-not a private one, so wind is keyed to the same along-track metric the HUD and the
-stage gate use. Free roam has no `TrackProgress`, so there the gust runs on the car's own
-odometer (`car.gd` → `_wind_odometer`); the lookup retries about once a second.
+the pace line they are computed from. Distance comes from the car's own odometer (`car.gd` → `_wind_odometer`).
 
 The gust profile is `strength + gust × (normalised sum of `OCTAVES` layered sines)`,
 so it is smooth (a gust builds and eases rather than snapping) and provably bounded to
@@ -465,9 +462,7 @@ authored, so the heading half can never be tuned into a wobble. Without it the
 positional anchor left rotation completely free, and anything that turned a held car
 — a kerb, a steering input during the countdown, an uneven surface — left it turned:
 measured at **16.6° of drift in two seconds** from one nudge, which is how a car could
-be pointing the wrong way by the time the 3·2·1 reached GO. Guarded by
-`tests/headless/test_countdown_hold.gd`, which asserts the behaviour (no ringing, no
-drift, still releases) rather than any tuned value.
+be pointing the wrong way by the time the 3·2·1 reached GO.
 
 **A body with no yaw freedom is skipped, and this is load-bearing.** The heading term
 needs the yaw inertia, which it gets by inverting `get_inverse_inertia_tensor()` — and
@@ -528,7 +523,6 @@ player put during the countdown (`handbrake_locked` forces the handbrake).
 ## Tests
 
 `tests/headless/test_car.gd` (launch, speed, steering, reset),
-`tests/headless/test_car_terrain.gd` (behavior on slopes),
 `tests/headless/test_crosswind.gd` (the storm wind profile + its determinism).
 
 ## Related config

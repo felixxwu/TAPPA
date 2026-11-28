@@ -33,9 +33,7 @@ var _index := 0
 
 
 func _ready() -> void:
-	var cfg: GameConfig = Config.data
-	bonnet_camera.transform.origin = cfg.bonnet_offset
-	bonnet_camera.fov = cfg.bonnet_fov
+	refresh_bonnet_offset()
 	_index = _saved_index()
 	_apply()
 

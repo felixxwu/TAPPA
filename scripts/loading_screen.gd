@@ -1,17 +1,14 @@
 class_name LoadingScreen
 extends CanvasLayer
-# Full-screen "loading" overlay shown while world.gd builds the world.
+# Full-screen "loading" overlay shown while the level builds the world.
 #
-# Godot's own boot bar only covers engine + .pck load + script compile. The
-# world generation that runs in world.gd._ready() (track, terrain ring, tree
-# and bush scatter) is heavy and synchronous, so without this the screen sits
-# frozen with no feedback between the boot bar finishing and the first playable
-# frame. world.gd shows this overlay first, yielding a frame at each generation
-# stage boundary so the screen actually paints, and calls `finish()` when the
-# world is ready.
+# Godot's own boot bar only covers engine + .pck load + script compile. The level
+# build is heavy, so without this the screen sits frozen with no feedback between the
+# boot bar finishing and the first playable frame. The host shows this overlay first,
+# yields frames so the screen actually paints, and calls `finish()` when the world is
+# ready.
 #
-# The step line shows a gameplay TIP (LoadingTips), not the generation stage, and world.gd
-# ::_stage still print()s the stage name for perf debugging regardless. The tip
+# The step line shows a gameplay TIP (LoadingTips), not the build step. The tip
 # CYCLES to a fresh draw every _TIP_CYCLE_SEC so a long load doesn't sit on one
 # line for its whole duration. Other callers build their OWN LoadingScreen
 # instance and set_title() it; the step line keeps cycling its tips under them, and only a set_step() call locks it
@@ -51,7 +48,7 @@ var _dot_timer := 0.0
 var _dot_count := 0
 # True once set_step() is called — a caller that supplied its own status text
 # ("Uploading…", "Preparing the garage…") owns the step line, and the tip
-# cycle must not overwrite it. world.gd's own generation never calls set_step,
+# cycle must not overwrite it. The level build never calls set_step,
 # so its tip keeps cycling for the whole load.
 var _step_locked := false
 
@@ -168,7 +165,7 @@ func pin_title(text: String) -> void:
 
 
 # Overwrite the step line with `text` (e.g. "Preparing the garage…"), replacing whatever
-# random tip _init() picked. world.gd's own generation stages do NOT call this any more —
+# random tip _init() picked. The level build does NOT call this —
 # see the header comment — but a caller wanting a short, specific status line on its own
 # LoadingScreen instance still can. Calling this LOCKS the step line: the tip cycle is
 # stopped so a caller's own status text is never overwritten by a random tip on the next

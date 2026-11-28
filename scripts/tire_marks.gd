@@ -40,46 +40,21 @@ extends Node3D
 # — but with black marks it means SOLID BLACK trails, so it is a measurement tool now
 # rather than an alternative look.
 #
-# Created + wired by the host scene (level_view.gd, world.gd).
+# Created + wired by the host scene (level_view.gd).
 # Marks are capped per wheel (a ring buffer).
 
-# Windowed nearest-offset search of the centerline (around the car's last offset),
-# mirroring TrackProgress — local, so it never snaps to a far part of a winding road.
-const SEARCH_BACK_M := 30.0
-const SEARCH_FWD_M := 60.0
-const SEARCH_STEP_M := 1.0
-# Tighter window (around the car's offset) for each wheel's own nearest-point gate.
-const WHEEL_WINDOW_M := 20.0
 # Surface split: a wheel reads as tarmac above this tarmac_weight (the same 0.5 the
 # road colour/grip feather across), gravel at or below it. Gravel lays a continuous
 # rut; tarmac lays a skidmark only under wheelspin.
 const TARMAC_WEIGHT_MAX := 0.5
 
-var _centerline: Curve2D
-# UNGATED MODE — see setup(). true when there is no centerline at all (the OVERWORLD, whose
-# roads are a NETWORK rather than one curve): every corridor/offset test is skipped and the
-# only thing that decides whether a wheel marks is the terrain's own surface answer, since the
-# free roam's roads are carved into the terrain surface weights. A stage always supplies a
-# centerline and so never enters this mode.
-var _ungated := false
-# Below this ROAD weight (surface_at().x) an ungated wheel is on open ground rather than on a
-# carved road, and breaks its ribbon — the ungated equivalent of the stage's half-width gate.
-const UNGATED_ROAD_WEIGHT_MIN := 0.05
-var _baked_length := 0.0
-# Resampled centerline point table, SHARED with TrackProgress (TrackProgress.baked_points
-# caches one table per curve, so the two systems resample the track once between them).
-# Every per-tick nearest-point probe below reads this array instead of calling
-# Curve2D.sample_baked — the car scan plus four wheel scans were ~255 engine calls a
-# tick. Lookups interpolate (TrackProgress.point_on), so mark placement is not
-# quantised to the table spacing.
-var _pts := PackedVector2Array()
-var _terrain: Node          # TerrainManager (height_at), or null on flat fixtures
+# Below this ROAD weight (surface_at().x) a wheel is on open ground rather than on a road,
+# and breaks its ribbon: grass never marks.
+const ROAD_WEIGHT_MIN := 0.05
+var _terrain: Node          # exposes surface_at, or null on flat fixtures
 var _car: Node              # the VehicleBody3D (read for linear_velocity)
-var _half_width := 3.0      # road half-width (track_width * 0.5)
-var _offset := 0.0          # cached windowed nearest-offset for the car centre
 # Per-target segment spacing, resolved ONCE in setup() (a web TOUCH device lays coarser
-# marks). Resolved rather than read per tick so the tier can't be re-derived 60x/second,
-# matching how world.gd resolves the other per-target values at boot.
+# marks). Resolved rather than read per tick so the tier can't be re-derived 60x/second.
 var _segment_step := 0.5
 var _material: StandardMaterial3D
 # Which mode _material was built for, so flipping tire_mark_alpha_enabled rebuilds it
@@ -129,20 +104,9 @@ var _surface_arrays: Array = []
 var _upload_count := 0            # total surface rebuilds performed (readout for tests)
 
 
-# Wire to a freshly generated track + the current car. half_width is the road
-# half-width (track_width * 0.5) the marks are gated to.
-#
-# `centerline` MAY BE NULL, which selects the ungated mode described above: no corridor test,
-# the terrain surface alone decides. Everything else (the surface split, the force/grip-driven
-# strength, the ring buffers, the material) is identical in both modes.
-func setup(centerline: Curve2D, car: Node, terrain: Node, half_width: float) -> void:
-	_centerline = centerline
-	_ungated = centerline == null
-	_baked_length = 0.0 if _ungated else centerline.get_baked_length()
-	_pts = PackedVector2Array() if _ungated else TrackProgress.baked_points(centerline)
+# Wire to the current car and the terrain whose surface_at decides where marks lay.
+func setup(car: Node, terrain: Node) -> void:
 	_terrain = terrain
-	_half_width = half_width
-	_offset = 0.0
 	_segment_step = Config.data.tire_mark_segment_step_for(
 		Platform.is_web(), Platform.is_touch())
 	_ensure_material()
@@ -192,8 +156,6 @@ func _physics_process(delta: float) -> void:
 func _timed_physics_process(_delta: float) -> void:
 	if not Config.data.tire_marks_enabled or not is_instance_valid(_car):
 		return
-	if _centerline == null and not _ungated:
-		return
 	# A live inspector flip of tire_mark_alpha_enabled rebuilds the material here so the
 	# very next mark laid this tick already uploads against it (existing ribbons are
 	# only refreshed by an explicit flush_uploads()).
@@ -204,13 +166,6 @@ func _timed_physics_process(_delta: float) -> void:
 		for i in _last_pos.size():
 			_last_pos[i] = null
 		return
-	# Advance the shared offset cache from the car, then gate each wheel by ITS OWN
-	# nearest centerline point (not the car's road frame — on a corner a wheel that's
-	# on the road but ahead on the curve reads as far off-axis against the car's
-	# tangent and would be wrongly rejected).
-	if not _ungated:
-		_offset = _windowed_offset(Vector2(_car.global_position.x, _car.global_position.z))
-	var gate := _half_width + Config.data.tire_mark_gravel_margin_m
 	# Per-target segment spacing: a web TOUCH device lays coarser marks, halving both the
 	# emit rate and the eventual ArrayMesh surface rebuilds.
 	var step := _segment_step
@@ -221,27 +176,14 @@ func _timed_physics_process(_delta: float) -> void:
 			continue
 		var wpos: Vector3 = wheel.global_position
 		var wxz := Vector2(wpos.x, wpos.z)
-		# UNGATED (free roam): there is no curve to be off, so the corridor test is skipped
-		# entirely and only the surface answer below decides. The road normal likewise has no
-		# curve to come from, so the ribbon is laid across the CAR's right axis.
-		var w_off := 0.0
-		if not _ungated:
-			w_off = _wheel_offset(wxz)
-			# True distance to the wheel's nearest road point: off the road (incl. the
-			# verge margin) — i.e. on the grass — breaks the ribbon.
-			if wxz.distance_to(_point_at(w_off)) > gate:
-				_last_pos[i] = null
-				continue
-		# On the road — pick the mark by surface, and how STRONG it is from how hard this
+		# Pick the mark by surface, and how STRONG it is from how hard this
 		# tire is working: force on the loose gravel, grip usage on the paved tarmac (see
 		# the header). Terrain is null on the flat test fixtures, where all is gravel.
 		var color: Color = Config.data.tire_mark_color
 		var strength := _gravel_strength(wheel)
 		if _terrain != null and _terrain.has_method("surface_at"):
 			var surf: Vector2 = _terrain.surface_at(wpos.x, wpos.z)
-			# In ungated mode the road WEIGHT replaces the corridor test: open ground away
-			# from a carved road is grass, and grass never marks.
-			if _ungated and surf.x <= UNGATED_ROAD_WEIGHT_MIN:
+			if surf.x <= ROAD_WEIGHT_MIN:
 				_last_pos[i] = null
 				continue
 			if surf.y > TARMAC_WEIGHT_MAX:
@@ -263,7 +205,7 @@ func _timed_physics_process(_delta: float) -> void:
 			# A fresh point after a break (airborne / off the gravel / not skidding)
 			# starts a NEW strip — it must NOT bridge to the last point across the gap.
 			var connected: bool = _last_pos[i] != null
-			_emit_segment(i, wpos, _across_dir(i, wxz, w_off), connected, color,
+			_emit_segment(i, wpos, _across_dir(i, wxz), connected, color,
 				_tire_width_of(wheel))
 			_last_pos[i] = wxz
 
@@ -508,8 +450,8 @@ static func _build_ribbon(pairs: Array) -> Dictionary:
 # The unit XZ direction a segment point is spread along: PERPENDICULAR TO WHERE THE TYRE IS
 # GOING, never to where it is pointing.
 #
-# THE SIDEWAYS BUG THIS FIXES. The width used to come from the road normal (stage) or the car's
-# right axis (free roam) — i.e. from the tyre's HEADING. That is only perpendicular to travel
+# THE SIDEWAYS BUG THIS FIXES. The width used to come from the car's right axis — i.e. from
+# the tyre's HEADING. That is only perpendicular to travel
 # while the car tracks straight. In a slide or a spin the travel direction rotates away from the
 # heading, and once travel and the spread direction line up the two verts of each pair advance
 # ALONG the ribbon instead of across it: consecutive pairs become collinear and the quads
@@ -520,9 +462,9 @@ static func _build_ribbon(pairs: Array) -> Dictionary:
 # Sources, in order: this wheel's own travel since its last point (the truest answer, and what a
 # connected quad is actually bridging), then the CAR's velocity (a strip's first point has no
 # travel yet, and a sliding car's body velocity is already the right answer), and only then the
-# old heading-derived normal as a last resort — reachable only if the car is somehow at rest,
+# car's right axis as a last resort — reachable only if the car is somehow at rest,
 # which the speed gate above has already excluded.
-func _across_dir(i: int, wxz: Vector2, offset: float) -> Vector2:
+func _across_dir(i: int, wxz: Vector2) -> Vector2:
 	var last: Variant = _last_pos[i] if i < _last_pos.size() else null
 	if last != null:
 		var travel: Vector2 = wxz - (last as Vector2)
@@ -533,7 +475,7 @@ func _across_dir(i: int, wxz: Vector2, offset: float) -> Vector2:
 		var vxz := Vector2(v.x, v.z)
 		if vxz.length() > 0.0001:
 			return _perp(vxz)
-	return _across_normal(offset)
+	return _across_normal()
 
 
 # The left-hand unit perpendicular of an XZ direction.
@@ -561,12 +503,9 @@ func _tire_width_of(wheel: Node) -> float:
 	return maxf(w, 0.0)
 
 
-# The last-resort across-direction: the road normal on a stage, and the CAR's own right axis in
-# ungated mode (no curve to take a tangent from). Both are unit XZ vectors. Only reached when
-# neither the wheel's travel nor the car's velocity can answer — see _across_dir.
-func _across_normal(offset: float) -> Vector2:
-	if not _ungated:
-		return _normal_at(offset)
+# The last-resort across-direction: the CAR's own right axis, as a unit XZ vector. Only reached
+# when neither the wheel's travel nor the car's velocity can answer — see _across_dir.
+func _across_normal() -> Vector2:
 	var car3d := _car as Node3D
 	if car3d == null:
 		return Vector2(0.0, 1.0)
@@ -575,49 +514,6 @@ func _across_normal(offset: float) -> Vector2:
 	if flat.length() < 0.001:
 		return Vector2(0.0, 1.0)
 	return flat.normalized()
-
-
-# The left road normal at an offset (for the ribbon's width direction).
-func _normal_at(offset: float) -> Vector2:
-	var p := _point_at(offset)
-	var tangent := _point_at(minf(offset + 1.0, _baked_length)) - p
-	if tangent.length() < 0.001:
-		tangent = p - _point_at(maxf(offset - 1.0, 0.0))
-	if tangent.length() < 0.001:
-		tangent = Vector2(0.0, 1.0)
-	tangent = tangent.normalized()
-	return Vector2(-tangent.y, tangent.x)
-
-
-# The car's nearest offset, searched in a wide window around the last value.
-func _windowed_offset(here: Vector2) -> float:
-	return _search_offset(here, _offset - SEARCH_BACK_M, _offset + SEARCH_FWD_M)
-
-
-# A wheel's nearest offset — a tighter window around the car's offset (wheels are
-# within a couple of metres of the car along the track).
-func _wheel_offset(here: Vector2) -> float:
-	return _search_offset(here, _offset - WHEEL_WINDOW_M, _offset + WHEEL_WINDOW_M)
-
-
-func _search_offset(here: Vector2, from_m: float, to_m: float) -> float:
-	var lo := maxf(0.0, from_m)
-	var hi := minf(_baked_length, to_m)
-	var best_o := lo
-	var best_d := INF
-	var o := lo
-	while o <= hi:
-		var d := here.distance_squared_to(_point_at(o))
-		if d < best_d:
-			best_d = d
-			best_o = o
-		o += SEARCH_STEP_M
-	return best_o
-
-
-# Point on the centerline at a baked offset, off the shared table (see _pts).
-func _point_at(offset: float) -> Vector2:
-	return TrackProgress.point_on(_pts, _baked_length, offset)
 
 
 # Force the ribbon material's shader variant to compile NOW (during track

@@ -237,7 +237,7 @@ carried in the context precisely so the headline example is true.
 
 "Snowy" is `GameConfig.ground_is_snow()`, derived from `deep_snow_depth_m > 0.0` — i.e.
 the region seated a deep-snow block ([snow-region.md](snow-region.md)). No new flag to
-keep in sync, the same shape as the `frozen_water_grip > 0.0` gate ice already uses.
+keep in sync.
 
 **Lifecycle.** The axis fields are live `GameConfig` fields defaulting to `1.0`, the
 identity on every surface. A car spec has no source for them (a car brings one compound
@@ -251,14 +251,13 @@ compound's does — rubber must never move a car's rally eligibility. They delib
 **not** move the upgrades menu's GRIP row, which reads `tire_compound` alone: one headline
 number cannot honestly state a figure that changes with the surface.
 
-**Where it is applied.** `Drivetrain.surface_tire_params` folds it into `mu_mult` in **all
-three** branches, for the same reason weather is folded in unconditionally — this is the
+**Where it is applied.** `Drivetrain.surface_tire_params` folds it into `mu_mult` in **both**
+branches, for the same reason weather is folded in unconditionally — this is the
 single per-contact resolver every wheel goes through:
 
 | branch | tarmac weight passed | note |
 |---|---|---|
 | no terrain (flat fixtures) | 0 | so a fixture still gets the compound's behaviour instead of neutral rubber |
-| frozen water / ice | 0, **snowy side** | a frozen lake is only ever authored by a snowy region, and winter rubber is exactly what should pay off when the car slides onto it |
 | normal blend | `s.x * s.y` | road weight × tarmac-within-road = how much tarmac this contact is really on |
 
 ## Helper functions
@@ -410,17 +409,10 @@ config by `apply_car`).
 `abs_min_speed`, `gear_ratios`, `final_drive`, `drag_coefficient`.
 
 
-## Region grip overrides and ice
+## Region grip overrides
 
-Two ways the per-surface μ scales can be replaced for a stage, both introduced with the
-Alps (see [snow-region.md](snow-region.md)):
-
-- **Per-surface overrides.** A region may override `grass_grip` / `gravel_grip` /
+The per-surface μ scales can be replaced for snow (see [snow-region.md](snow-region.md)).
+A region may override `grass_grip` / `gravel_grip` /
   `tarmac_grip` for every stage tagged to it. `BiomeDirector` seats the
   values, so `surface_tire_params` needs no change at all — it reads the same live config
   fields it always did.
-- **Ice.** On a stage whose region freezes its water, a contact over a submerged cell
-  **overrides** the surface blend with `cfg.frozen_water_grip` rather than scaling it —
-  what is under the ice is irrelevant to a tyre resting on top of it. Gated on
-  `frozen_water_grip > 0.0`, which is `0.0` everywhere else, so the added cost off a
-  frozen stage is one float compare.

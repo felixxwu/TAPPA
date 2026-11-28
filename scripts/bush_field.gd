@@ -1,7 +1,7 @@
 class_name BushField
 extends Node3D
 # Interaction (NOT rendering) for the ground-cover bushes. The bushes are drawn by a
-# TreeMeshField built with_collision=false (world.gd) — pure visual scatter with no
+# TreeMeshField built with_collision=false — pure visual scatter with no
 # physics body, so the car drives THROUGH them. This node makes that drive-through
 # cost something: brushing a bush deals a small flat HP loss and applies a side-based
 # yaw drag torque, as if the bush snagged and dragged a corner of the car. See

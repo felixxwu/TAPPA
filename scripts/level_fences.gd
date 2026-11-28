@@ -211,9 +211,9 @@ func _hedge(pts: PackedVector2Array) -> void:
 		var bulge_r := (_hash(sx, sz + 1.0) - 0.5) * 0.5
 		var tl := (_hash(sx + 2.0, sz) - 0.5) * 0.5
 		var tc := (_hash(sx, sz + 2.0) - 0.5) * 0.6
-		var tr := (_hash(sx + 3.0, sz) - 0.5) * 0.5
+		var t_right := (_hash(sx + 3.0, sz) - 0.5) * 0.5
 		var offs := [[0.7 + wide, 0.0], [0.62 + wide * 0.8 + bulge_l, height * 0.5], [0.45 + wide * 0.6, height + tl * 0.5],
-			[0.0, height + 0.15 + tc * 0.5], [-0.45 - wide * 0.6, height + tr * 0.5], [-0.62 - wide * 0.8 - bulge_r, height * 0.5], [-0.7 - wide, 0.0]]
+			[0.0, height + 0.15 + tc * 0.5], [-0.45 - wide * 0.6, height + t_right * 0.5], [-0.62 - wide * 0.8 - bulge_r, height * 0.5], [-0.7 - wide, 0.0]]
 		var ring := []
 		for j in 7:
 			var o := side * float(offs[j][0])

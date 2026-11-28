@@ -3,7 +3,7 @@ extends GutTest
 # The snow region — the first region to influence HANDLING as well as look.
 #
 # Everything here is a RELATION or a STRUCTURE, never a tuned value: a designer retuning
-# snow_grass_grip / ice_grip / snow_deep_drag must not break this file
+# snow_grass_grip / snow_deep_drag must not break this file
 # (CLAUDE.md). Where a region is needed, a SYNTHETIC one is installed via the
 # Registry.Seam rather than leaning on the shipped Alps entry — except in the two places
 # explicitly marked as catalogue-contract checks.
@@ -29,7 +29,6 @@ func before_each() -> void:
 				"tarmac": "snow_tarmac_grip",
 			},
 			"deep_snow": {"depth": "snow_visual_depth_m", "drag": "snow_deep_drag"},
-			"frozen_water": {"grip": "ice_grip"},
 		},
 	]
 	RegionLibrary.override_for_test(regions)
@@ -47,7 +46,6 @@ func test_a_region_authoring_no_handling_reports_and_resolves_nothing() -> void:
 	for rid in [PLAIN_REGION, "no_such_region", ""]:
 		assert_eq(RegionLibrary.surface_grip_of(_cfg, rid), {}, "%s: empty grip" % rid)
 		assert_eq(RegionLibrary.deep_snow_of(_cfg, rid), {}, "%s: empty snow" % rid)
-		assert_eq(RegionLibrary.frozen_water_of(_cfg, rid), {}, "%s: empty ice" % rid)
 
 
 func test_a_region_authoring_handling_resolves_the_named_config_fields() -> void:
@@ -60,7 +58,6 @@ func test_a_region_authoring_handling_resolves_the_named_config_fields() -> void
 	var deep := RegionLibrary.deep_snow_of(_cfg, SNOW_REGION)
 	assert_eq(deep.get("drag"), _cfg.snow_deep_drag)
 	assert_eq(deep.get("depth"), _cfg.snow_visual_depth_m)
-	assert_eq(RegionLibrary.frozen_water_of(_cfg, SNOW_REGION).get("grip"), _cfg.ice_grip)
 
 
 func test_a_block_naming_an_unknown_field_is_skipped_not_defaulted() -> void:
@@ -77,7 +74,7 @@ func test_resolving_does_not_coerce_to_float() -> void:
 	# A float() here crashed rally start with "Nonexistent 'float' constructor" the
 	# moment a block named a Color field. Nothing about the pattern is numeric.
 	RegionLibrary.override_for_test([
-		{"id": "coloured", "surface_grip": {"grass": "ice_color"}},
+		{"id": "coloured", "surface_grip": {"grass": "wheel_color"}},
 	] as Array[Dictionary])
 	var out := RegionLibrary.surface_grip_of(_cfg, "coloured")
 	assert_true(out.get("grass") is Color, "a Color field resolves as a Color")
@@ -92,7 +89,7 @@ func test_the_shipped_snow_region_names_only_real_config_properties() -> void:
 	var cfg: GameConfig = GameConfig.new()
 	var named := 0
 	for region in RegionLibrary.all():
-		for block_key in ["surface_grip", "deep_snow", "frozen_water"]:
+		for block_key in ["surface_grip", "deep_snow"]:
 			for key in (region.get(block_key, {}) as Dictionary).values():
 				named += 1
 				assert_not_null(cfg.get(String(key)),

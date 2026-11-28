@@ -7,7 +7,6 @@ extends GutTest
 # re-derive the tuned config fields (all read live each physics step). Uses the
 # synthetic CarFixtures roster so no shipped catalogue entry is depended on.
 
-const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
 
@@ -16,9 +15,9 @@ var _car: VehicleBody3D
 
 
 func before_all() -> void:
-	SceneHelpers.minimal_world()
+	Config.reset()
 	CarFixtures.install()
-	_scene = load("res://main.tscn").instantiate()
+	_scene = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child(_scene)
 	_car = _scene.get_node("Car")
 
@@ -94,12 +93,12 @@ func test_retune_is_idempotent_and_does_not_compound() -> void:
 # truth that any live re-derive (retune) of the same final state must
 # match. Comparing two independently-built configs keeps these tests value-agnostic (no
 # pinned tunable number), per the project testing rules.
-# NOTE: returns the LIVE config object, which for a main.tscn car is the shared
+# NOTE: returns the LIVE config object, which for a scene car is the shared
 # Config.data — i.e. the SAME object as _car.config. Comparing a field of _car.config
 # against this reference is a variable compared with itself and passes vacuously (every
 # comparison test in this file used to do exactly that). Prefer _fresh_field_values().
 func _fresh_field(owned: Dictionary) -> GameConfig:
-	var fresh: VehicleBody3D = load("res://main.tscn").instantiate().get_node("Car")
+	var fresh: VehicleBody3D = load("res://tests/fixtures/test_track.tscn").instantiate().get_node("Car")
 	add_child_autofree(fresh.get_parent())
 	fresh.apply_owned(owned)
 	return fresh.config
@@ -219,7 +218,7 @@ func test_retune_does_not_reshape_or_reset_the_body() -> void:
 
 # Field `owned` on a throwaway car and return a VALUE SNAPSHOT of the resulting config.
 #
-# Deliberately NOT the config object: the main.tscn car runs on the SHARED Config.data, so
+# Deliberately NOT the config object: the scene car runs on the SHARED Config.data, so
 # a returned reference is the same object the car under test then mutates, and any later
 # comparison against it is a variable compared with itself — vacuously true.
 func _fresh_field_values(owned: Dictionary) -> Dictionary:

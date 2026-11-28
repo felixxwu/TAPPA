@@ -137,9 +137,9 @@ func _auto_tag(_w: float, h: float) -> void:
 
 
 # Draw `text` centred on `center` in the house font, at FONT_SIZE times `scale`, on whole pixels.
-func _glyph(center: Vector2, text: String, color: Color, scale := 1) -> void:
+func _glyph(center: Vector2, text: String, color: Color, glyph_scale := 1) -> void:
 	var font := UITheme.font()
-	var fs := UITheme.FONT_SIZE * scale
+	var fs := UITheme.FONT_SIZE * glyph_scale
 	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	draw_string(font, Vector2(roundf(center.x - tw * 0.5), roundf(center.y + fs * 0.35)),
 		text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, color)

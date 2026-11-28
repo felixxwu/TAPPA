@@ -69,7 +69,7 @@ func test_params_direction_is_a_unit_vector_matching_the_particle_convention() -
 	var dir: Vector3 = WindSway.params(cfg, "dry")[WindSway.G_DIR]
 	assert_almost_eq(dir.length(), 1.0, 0.0001, "the pushed heading is a unit vector")
 	# 90 degrees == world +Z, the same convention Crosswind.direction (used by the
-	# storm body force) and the particle wind_dir conversion in world.gd both use.
+	# storm body force) and the particle wind_dir conversion in LevelView both use.
 	assert_almost_eq(dir.x, 0.0, 0.001, "90 degrees points along +Z, not +X")
 	assert_almost_eq(dir.z, 1.0, 0.001, "90 degrees points along +Z")
 	assert_eq(dir, Crosswind.direction(90.0), "matches the shared heading conversion exactly")

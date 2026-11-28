@@ -37,7 +37,7 @@ func stamp_trees(xf: PackedFloat32Array, radius_per_width: float) -> void:
 		tree_bytes.fill(0)
 	var inv := 1.0 / cell()
 	var off := size * 0.5
-	for i in xf.size() / 12:
+	for i in int(xf.size() / 12.0):
 		var fx := (xf[i * 12 + 3] + off) * inv
 		var fz := (xf[i * 12 + 11] + off) * inv
 		var c := roundi(fx)

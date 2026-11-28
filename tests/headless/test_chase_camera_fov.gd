@@ -5,11 +5,9 @@ extends GutTest
 
 var _cam: Camera3D
 var _target: RigidBody3D
-var _saved_water := 0.0
 
 
 func before_each() -> void:
-	_saved_water = Config.data.track_water_level_m
 	_target = RigidBody3D.new()
 	_target.gravity_scale = 0.0
 	add_child(_target)
@@ -30,7 +28,6 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	Config.data.track_water_level_m = _saved_water
 	_cam.free()
 	_target.free()
 

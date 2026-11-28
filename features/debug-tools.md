@@ -10,7 +10,7 @@ It is gated on `SettingsMenu.dev_tools_enabled()`, which defaults to **true** �
 exports (including the web build) get them too, same as the editor and debug exports. A config
 value that starts a feature on still works in any build regardless of the switch.
 
-**Tests:** `tests/headless/test_debug_arrows.gd`, `tests/headless/test_hud.gd`, `tests/headless/test_perf_overlay.gd`, `tests/headless/test_level_stats.gd`, `tests/headless/test_perf_log.gd`, `tests/headless/test_benchmark_mode.gd`
+**Tests:** `tests/headless/test_debug_arrows.gd`, `tests/headless/test_hud.gd`, `tests/headless/test_level_stats.gd`, `tests/headless/test_perf_log.gd`
 
 ## Wheel force visualization
 
@@ -124,52 +124,6 @@ refreshing while hidden — `Drivetrain.readouts` is only populated while
 `publish_readouts` is on, which the car ties to the force-arrow overlay's visibility
 (the same H toggle), so there is nothing to read when it's down.
 
-## Frame profiler overlay
-
-**Source:** `scripts/perf_overlay.gd` (`class_name PerfOverlay extends
-CanvasLayer`). Created by `world.gd` in `_ready()` (like the wheel-force
-overlay), passing the `Floor` terrain manager for correlation and pointing
-`measure_viewport` at the `PostProcess/View` SubViewport (where the 3D pass
-actually runs in `main.tscn` — the root's 3D is disabled there). Toggled with
-**P** (`toggle_perf_overlay`); hidden and idle by default. It lives on the dev stage only: in free roam P toggles
-`DebugStats` instead, and on the Hafren level (`LevelView`) it cycles `LevelStats` (below) through off → perf → adaptive graphics ([adaptive-graphics.md](adaptive-graphics.md)).
-
-**Hafren level stats** — `scripts/level_stats.gd` (`class_name LevelStats`), added by
-`LevelView._ready` as `perf_stats` and toggled by P in `LevelView._unhandled_input` (all builds).
-Shows fps / frame ms, the frame's total triangles, draw calls and objects (`RenderingServer`
-rendering info), whether the engine got threads (`OS.has_feature("threads")`, the check that a web
-build really runs threaded) with how many terrain chunks are building on workers, then trees and ground cover: `LevelStats.tally` walks the `Trees` and
-`Ground/Cover` nodes' MultiMeshes and counts instances and triangles within each one's
-`visibility_range_end` of the camera (frustum culling not subtracted), plus trees packed
-(`LevelTrees.drawn_count`) and cover tiles built.
-
-Diagnoses choppiness by separating the suspects per frame:
-
-| Line | Tells you |
-|------|-----------|
-| frame current / avg / **MAX** | spike vs steady (max ≫ avg ⇒ intermittent stutter) |
-| cpu process / physics | main-thread script + collision/physics cost |
-| render **cpu** vs **gpu** | CPU-bound vs GPU-bound (fill rate, post-process shader) |
-| draws / objects / prims | scene complexity / draw-call pressure |
-| vram (tex) / nodes / phys objs | video-memory + scene-tree + active-physics pressure |
-| chunks loaded / spikes / **audio overruns** | terrain ring size; running spike count; engine-audio buffer underruns |
-
-The **audio overruns** count is the fielded car's engine `AudioStreamGenerator`
-buffer underruns (`EngineAudio.skip_count()`), wired in by `world.gd`. It's the live
-signal for main-thread audio starvation — most visible on the single-threaded web
-build at the 30 fps cap, where a long frame drains the buffer before the next
-`_process` fill (see `engine_audio.gd`'s `buffer_seconds()`). Drive normally with the
-overlay up to catch which frames cause overruns.
-
-While active it enables `RenderingServer.viewport_set_measure_render_time` and, on
-every frame over the **spike threshold** — now relative to the fps cap
-(`BenchmarkStats.spike_threshold_ms(Engine.max_fps)`: ~28 ms uncapped, ~50 ms at a
-30 fps cap, so a steady 33 ms frame isn't miscounted) **or on any audio overrun** —
-prints a `[PERF SPIKE]` line to stdout with the full breakdown **plus** whether a
-terrain chunk was integrated that frame (`TerrainManager.integrations_total` delta)
-and the frame's `audio_skips`. The GPU timer reads 0 on backends that don't support
-it (and always headless); the overlay labels that case.
-
 ## PerfLog autoload (per-second log lines + per-script timing)
 
 **Source:** `scripts/perf_log.gd`, registered as the `PerfLog` autoload. Gated on
@@ -213,5 +167,4 @@ keyboard + gamepad navigable" rule in `CLAUDE.md`.
 `tests/headless/test_debug_arrows.gd` — verifies the force-arrow overlay updates
 from the force readouts. `tests/headless/test_hud.gd` — the grip grid's 2x2 layout, H
 gate, corner mapping and cell formatting; `tests/headless/test_drivetrain.gd` —
-`grip_fraction` against the friction ellipse (and its zero-load guard). `tests/headless/test_perf_overlay.gd` — verifies the
-profiler overlay toggles, samples, formats, and reads the loaded chunk count.
+`grip_fraction` against the friction ellipse (and its zero-load guard).

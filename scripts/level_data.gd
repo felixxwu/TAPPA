@@ -90,7 +90,7 @@ static func unpack(d: Dictionary, with_trees := true, with_ground := true) -> Di
 			img.convert(Image.FORMAT_RGB8)
 			var px := img.get_data()
 			var floats := PackedFloat32Array()
-			floats.resize(px.size() / 3)
+			floats.resize(int(px.size() / 3.0))
 			for i in floats.size():
 				floats[i] = ((px[i * 3] << 8 | px[i * 3 + 1]) - 32768) / 10.0
 			out["heightmap"] = floats
@@ -98,7 +98,7 @@ static func unpack(d: Dictionary, with_trees := true, with_ground := true) -> Di
 	elif hm is String:
 		var raw := Marshalls.base64_to_raw(hm)
 		var floats := PackedFloat32Array()
-		floats.resize(raw.size() / 2)
+		floats.resize(int(raw.size() / 2.0))
 		for i in floats.size():
 			floats[i] = raw.decode_s16(i * 2) / 10.0
 		out["heightmap"] = floats
@@ -433,8 +433,8 @@ func ground(x: float, z: float) -> float:
 		h = near.y - 0.05 + (h - near.y + 0.05) * smoothstep(near.z + flat_margin, near.z + flat_margin + FALLOFF, near.x)
 	var p := patch_at(x, z)
 	if p.x < flat_margin + PATCH_FALLOFF:
-		var level := patch_h[int(p.y)] - 0.05
-		h = level + (h - level) * smoothstep(flat_margin, flat_margin + PATCH_FALLOFF, p.x)
+		var top := patch_h[int(p.y)] - 0.05
+		h = top + (h - top) * smoothstep(flat_margin, flat_margin + PATCH_FALLOFF, p.x)
 	return h
 
 

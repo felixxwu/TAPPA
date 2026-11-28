@@ -295,7 +295,7 @@ func _process(delta: float) -> void:
 # While the tree is paused (a pause/rest-stop/map/stats page is up) the HUD's Control children
 # are made fully transparent: the gauges would otherwise sit behind the page and its Back/action
 # row would overlap the health gauge. Done with `modulate.a`, NOT `visible`, so it can never
-# fight the writers of `visible` (hud_enabled, world.gd's photo-mode chrome, the gauges' own
+# fight the writers of `visible` (hud_enabled, photo mode's chrome, the gauges' own
 # fitted-or-not logic). Only touches the children on a pause TRANSITION.
 var _paused_look := false
 

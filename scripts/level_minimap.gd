@@ -31,7 +31,7 @@ func _ready() -> void:
 	_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	add_child(_vp)
 	_painter = Painter.new()
-	_painter.mini = self
+	_painter.minimap = self
 	_vp.add_child(_painter)
 	var mat := ShaderMaterial.new()
 	_mat = mat
@@ -48,7 +48,7 @@ func _ready() -> void:
 	_rect.material = mat
 	add_child(_rect)
 	var arrow := Arrow.new()
-	arrow.mini = self
+	arrow.minimap = self
 	arrow.set_anchors_preset(PRESET_FULL_RECT)
 	arrow.mouse_filter = MOUSE_FILTER_IGNORE
 	add_child(arrow)
@@ -135,7 +135,7 @@ func _paint(ci: CanvasItem) -> void:
 # The car, fixed where the shader puts it: heading-up, so always pointing straight up.
 class Arrow:
 	extends Control
-	var mini: LevelMinimap
+	var minimap: LevelMinimap
 
 	func _process(_dt: float) -> void:
 		var __t := Time.get_ticks_usec()
@@ -154,7 +154,7 @@ class Arrow:
 
 class Painter:
 	extends Node2D
-	var mini: LevelMinimap
+	var minimap: LevelMinimap
 
 	func _draw() -> void:
-		mini._paint(self)
+		minimap._paint(self)

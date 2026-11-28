@@ -1,6 +1,6 @@
 extends GutTest
 # LoadingTips: the flavor-text pool shown on the loading screen in place of the
-# generation-stage name (see loading_screen.gd, world.gd::_stage).
+# generation-stage name (see loading_screen.gd).
 
 func test_random_is_always_drawn_from_the_pool() -> void:
 	for _i in 30:

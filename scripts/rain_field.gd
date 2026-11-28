@@ -62,7 +62,7 @@ const _SNOW_LIFETIME := 7.0
 
 
 # Build the particle field for a weather-table "particles" kind ("rain" / "sand")
-# under `parent` (the chase camera). THIS is what world.gd calls: the kind comes
+# under `parent` (the chase camera). THIS is what the level calls: the kind comes
 # straight out of WeatherLibrary's entry, so adding a condition that reuses an
 # existing particle kind needs no code here at all. An unrecognised kind builds
 # nothing and returns null — same tolerance as WeatherLibrary.by_id. `wind_dir_deg`

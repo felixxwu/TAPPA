@@ -424,7 +424,6 @@ defaults to 1.0 so a session-less boot is unaffected.
 | Terrain / road | the bake — `TerrainManager.sun_color`/`sky_color` are scaled directly and baked into vertex colours at chunk generation (never via `weather_lit`) |
 | Car (chassis, cabin, wheels, swapped-in body models) | `GameConfig.apply_car_light` → `weather_lit(sun_color)` / `weather_lit(sky_color)` |
 | Foliage billboards (trees) | `GameConfig.apply_foliage_light` → same two colours, `billboard_opaque.gdshader` |
-| Water / ice (`scripts/lake_field.gd` → `build`) | `weather_lit` on the water + shore colours, and `sparkle_strength` scaled by `weather_sun_mult` (the sparkle is a sun glint) |
 | Wheel debris and engine smoke (`wheel_particles.gd` → `_emit`, `engine_smoke.gd` → `_write_slot`) | `weather_lit` on each particle's colour as it's written |
 
 **The other way out of this bug class: don't author a colour at all.** Tire marks hit

@@ -1,22 +1,15 @@
 class_name SceneTestHelpers
 extends RefCounted
-# Helpers for tests that need a booted main.tscn but NOT its terrain/track/foliage.
+# Shared setup for scene tests: a cheap booted game world and the frozen physics baseline.
 #
-# WHY THIS EXISTS — world.gd._ready() generates a full rally track and scatters
-# trees + bushes synchronously when main.tscn is instantiated. Under headless
-# that is ~15 s of CPU PER INSTANCE (the DFS track search dominates at ~7 s, the
-# two foliage scatters another ~7 s). Tests that only inspect the car, HUD or
-# cameras don't care about the track's shape or its foliage, so paying that cost
-# in every before_each is pure waste.
-#
-# minimal_world() trims the generation to a 1-turn track with no trees/bushes
-# (trees_per_turn = 0 zeroes BOTH fields — bushes reuse the same scatter params),
-# cutting the per-instance build to well under a second while still producing a
-# fully wired world: car, HUD, cameras and a (short) TrackProgress are all built
-# exactly as in the full game. Call it INSTEAD of Config.reset() right before
-# instantiating main.tscn.
+# add_level_world() boots level_view.tscn (the real game world: car, HUD, cameras, pause
+# menu) on a tiny synthetic level — a straight flat road and no trees — so a scene test
+# pays well under a second instead of a full Hafren load. Call it ONCE from before_all and
+# free the world plus remove_level_world() in after_all.
 #
 # use_test_config() installs the frozen physics baseline (TEST_CONFIG below).
+
+const LEVEL_PATH := "user://test_flat_level.json"
 
 
 # Frozen physics/handling baseline the model tests calibrate against: the fields
@@ -62,7 +55,6 @@ const TEST_CONFIG := {
 	"glow_bloom": 0.0,
 	"glow_hdr_threshold": 0.85,
 	"fog_density": 0.03,
-	"distant_terrain_enabled": true,
 	"rain_particle_count": 300,
 	"sand_particle_count": 250,
 	"storm_particle_count": 500,
@@ -73,18 +65,8 @@ const TEST_CONFIG := {
 	"night_road_darken": 0.7,
 	"headlight_color": Color(1, 0.94, 0.78, 1),
 	"headlight_range_m": 45.0,
-	"terrain_layer1_wavelength": 200.0,
-	"terrain_layer1_amplitude": 10.0,
-	"terrain_layer2_amplitude": 1.0,
-	"terrain_layer3_amplitude": 1.5,
 	"render_height": 0,
-	"track_runoff_m": 20.0,
-	"jump_span_m": 60.0,
 	"tarmac_color": Color(0.32, 0.32, 0.34, 1),
-	"track_progress_max_dist_m": 50.0,
-	"water_enabled": false,
-	"track_water_level_m": 0.0,
-	"cliff_amount": 1.0,
 	"tire_mark_max_segments": 200,
 	"tire_mark_ground_offset_m": 0.05,
 	"exhaust_offsets": {},
@@ -125,16 +107,29 @@ static func use_test_config() -> void:
 	cfg.peak_torque_rpm = 4200.0
 
 
-# Reset Config to the authored baseline, then strip world generation down to the
-# cheapest thing that still boots a complete scene. Mutates the live Config
-# singleton, so a later Config.reset() (e.g. in another file's before_each)
-# restores the full baseline.
-static func minimal_world() -> void:
-	Config.reset()
-	var cfg: GameConfig = Config.data
-	cfg.track_turn_count = 1  # shortest track the search reliably places
-	cfg.trees_per_turn = 0    # no trees AND no bushes (shared scatter params)
-	# Rocks deliberately do NOT share the tree scatter params (see GameConfig.rock_params),
-	# so zeroing trees_per_turn above does not reach them — they need switching off
-	# explicitly, or every cheap-world test pays for a rock scatter it never inspects.
-	cfg.rocks_enabled = false
+# Write the flat synthetic level, own the configured car, and boot level_view.tscn on it
+# under `parent`, returning the world root once the level has finished loading.
+static func add_level_world(parent: Node) -> Node3D:
+	var hm: Array = []
+	hm.resize(201 * 201)
+	hm.fill(0.0)
+	var road := [{"x": -100.0, "z": 0.0, "w": 3.0, "m": null, "tension": 1.0},
+		{"x": 100.0, "z": 0.0, "w": 3.0, "m": null, "tension": 1.0}]
+	var f := FileAccess.open(LEVEL_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"road": road, "trees": [], "heightmap": hm}))
+	f.close()
+	LevelView.forget_progress()
+	Save.set_setting(LevelView.CARS_KEY, [Config.data.level_car_id])
+	var world: Node3D = (load(Scenes.WORLD) as PackedScene).instantiate()
+	var view: LevelView = world.get_node("Level")
+	view.level_path = LEVEL_PATH
+	parent.add_child(world)
+	await view.loaded
+	return world
+
+
+# Undo what add_level_world left behind outside the scene: saved progress and the level file.
+static func remove_level_world() -> void:
+	LevelView.forget_progress()
+	Scenes.last_blocked_path = ""
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(LEVEL_PATH))

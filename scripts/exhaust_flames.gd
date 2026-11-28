@@ -24,7 +24,7 @@ extends Node3D
 #     state (held AND charged AND combusting), not "a bottle is fitted", so an empty tank
 #     puts the flame out.
 #
-# Created + wired by the host scene (level_view.gd, world.gd).
+# Created + wired by the host scene (level_view.gd).
 # See features/exhaust-flames.md.
 
 # --- Geometry ---------------------------------------------------------------
@@ -343,7 +343,7 @@ func _set_lit(lit: bool) -> void:
 
 # Force the flame's shader variant to compile NOW (during track generation, behind the
 # loading overlay) instead of on the first bang out on the stage. Auto-discovered by
-# world.gd's warm-up pass purely by implementing this pair. Same contract as the particle
+# the host's warm-up pass purely by implementing this pair. Same contract as the particle
 # pools, even though this is not one — the pass keys on the methods, not the type.
 func warm_up(pos: Vector3) -> void:
 	_warming = true

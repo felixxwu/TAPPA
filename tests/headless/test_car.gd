@@ -1,7 +1,7 @@
 extends "res://tests/headless/sim_test.gd"
 # Car behavior tests. These run on the flat test-track fixture
-# (tests/fixtures/test_track.tscn) rather than main.tscn so that terrain
-# generation settings cannot change where/how the car lands — the assertions
+# (tests/fixtures/test_track.tscn) rather than a level so that level
+# terrain cannot change where/how the car lands — the assertions
 # here are about the CAR, not the terrain. Car-meets-terrain coverage lives
 # in test_car_terrain.gd.
 #
@@ -68,7 +68,7 @@ func test_accelerate_moves_car_forward() -> void:
 
 
 func test_locked_car_ignores_accelerate() -> void:
-	# The lock world.gd holds the car under while the world builds (loading
+	# The lock LevelView holds the car under while the level loads (loading
 	# overlay up): with controls_locked set, W must not drive the car — the
 	# driver throttle is neutralised and the handbrake is forced on, so the car
 	# stays put. (Regression: player could drive off behind the loading screen.)
@@ -711,8 +711,7 @@ func test_head_on_collision_costs_hp() -> void:
 
 
 # Regression (the countdown vibration + sideways creep). While the car is held at the line
-# by the countdown's handbrake-only hold (StageManager.setup: controls_locked = false,
-# handbrake_locked = true) driver input stays LIVE, so the player revs against the static
+# by a handbrake-only hold (controls_locked = false, handbrake_locked = true) driver input stays LIVE, so the player revs against the static
 # parking hold. That hold used to be a velocity CANCEL sized off the PREVIOUS tick's
 # velocity (F = -m·v_h/dt), which always ran a tick behind whatever was pushing the car:
 # each tick it wiped last tick's velocity while the disturbance (a grade, the drivetrain,
@@ -993,8 +992,8 @@ func test_heading_hold_survives_a_locked_yaw_axis() -> void:
 	_car.axis_lock_angular_y = false
 
 
-# Free roam has no TrackProgress, so the storm gust runs on the car's own odometer: a car
-# with no stage around it must still be blown sideways.
+# The storm gust runs on the car's own odometer, so a car with no road around it must
+# still be blown sideways.
 func test_a_storm_pushes_the_car_with_no_stage_to_measure_distance_along() -> void:
 	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "gale", "wind": {
 		"strength": "storm_wind_strength", "gust": "storm_wind_gust", "dir_deg": "storm_wind_dir_deg"}}])

@@ -5,7 +5,7 @@ extends Node3D
 # The car's glowing head and tail lamps: one camera-facing flare (shaders/car_lamp.gdshader)
 # at each lamp centre the car exposes in `lamp_locals`. Headlights glow whenever the weather
 # switches the night headlight cone on; tail lamps run dim with them and glow fully under
-# the foot brake, day or night. Created and wired by level_view.gd and world.gd, like ExhaustFlames.
+# the foot brake, day or night. Created and wired by level_view.gd, like ExhaustFlames.
 
 const SHADER := preload("res://shaders/car_lamp.gdshader")
 
@@ -95,7 +95,7 @@ func _set_level(lamps: Array[MeshInstance3D], mat: ShaderMaterial, level: float)
 
 
 # Compile the lamp shader behind the loading overlay rather than on the first brake.
-# Auto-discovered by world.gd's warm-up pass, like the particle pools.
+# Auto-discovered by the host's warm-up pass, like the particle pools.
 func warm_up(pos: Vector3) -> void:
 	global_position = pos
 	for m in _head + _tail:

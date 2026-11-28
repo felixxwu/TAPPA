@@ -225,7 +225,7 @@ var peak_torque_rpm := 4500.0
 ## Per-surface grip multipliers on the base tire μ. Gravel is the standard 1.0
 ## (the generated road's default surface); grass (off the road) is lower and
 ## tarmac higher. A wheel's multiplier is resolved from the terrain at its
-## contact point (TerrainManager.surface_grip_at) and blends smoothly across the
+## contact point (LevelView.surface_at) and blends smoothly across the
 ## same feathered bands the road colour uses — grass↔road and gravel↔tarmac.
 @export var grass_grip := 0.7
 @export var gravel_grip := 1.0
@@ -299,8 +299,7 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 @export var snow_deep_drag := 1000.0
 ## Metres the VISUAL ground is drawn above the collision surface off-road, so the car
 ## visibly sinks in. Collision is untouched, so the wheels rest at true ground level.
-## Applied in ps1_terrain_snow.gdshader's vertex stage against the road weight, so the
-## road itself is never raised and the step becomes a bank. Props are not lifted with it,
+## Applied in level_ground.gdshader's vertex stage, so the road itself is never raised. Props are not lifted with it,
 ## so trees, bushes and rocks look buried in the snow.
 @export var snow_visual_depth_m := 0.35
 ## Metres past the painted road edge over which the snow rises to full depth
@@ -308,30 +307,14 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 @export var snow_bank_width_m := 2.0
 ## LIVE values, seated by LevelView from the snow under the car (0.0 off the snow). Never author these — they
 ## are the deep-snow counterpart to `weather`, written by the funnel and read by
-## car.gd (drag) and world.gd (the shader uniform).
+## car.gd (drag).
 @export var deep_snow_drag := 0.0
 @export var deep_snow_depth_m := 0.0
-## FROZEN LAKES (features/snow-region.md). In the Alps the water is ice: the lake plane
-## becomes SOLID and is driven on, rather than being the soft drag hazard it is
-## everywhere else. Authored values, named by the region like the grip block above.
-##
-## Tyre μ on the ice. An OVERRIDE, not a multiplier — what is under the ice does not
-## matter, so this replaces the surface blend rather than scaling it. Well below even
-## snow's grass value: sliding is the whole point of a frozen lake.
-@export var ice_grip := 0.12
-## The frozen lake's surface colours, replacing water_color / water_shore_color. Pale
-## and cold; the shore colour is what reads as the ice thinning at the bank.
-@export var ice_color := Color(0.80, 0.86, 0.90)
-@export var ice_shore_color := Color(0.88, 0.92, 0.95)
-## LIVE per-stage: the ice μ, or 0.0 when this stage's water is liquid. 0.0 is the "not frozen"
-## sentinel and is what every non-Alps stage runs, so the lake stays a soft hazard
-## everywhere it always was.
-@export var frozen_water_grip := 0.0
 ## The LIVE weather condition (WeatherLibrary.WEATHER_*), seated by whoever drives the
 ## weather. Session-less callers (benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
 @export var weather := WeatherLibrary.WEATHER_DRY
-# The active condition's sun_energy_mult, seated by world.gd::_apply_overcast_look
-# each stage boot (and reset to 1.0 there when the condition has no look block).
+# The active condition's sun_energy_mult, seated by the weather look
+# each level boot (and reset to 1.0 there when the condition has no look block).
 # NOT exported and NOT authored: it is a derived runtime value, mirroring onto the
 # CAR the same dimming the terrain already bakes into its vertex colours, so a
 # dimmed stage doesn't leave a full-brightness car floating in it. Read only by
@@ -717,14 +700,6 @@ func has_nitrous() -> bool:
 ## Length (s) of the coin pickup chime.
 @export var coin_pickup_sfx_duration_sec := 0.1
 
-## Countdown length, in seconds, before the car's controls unlock at the start
-## of a stage. The car holds position (handbrake forced) until it elapses.
-@export var stage_countdown_seconds := 3.0
-## Track-progress percentage (0..100) that ends the stage. 100 so the stage ends
-## exactly as the car crosses the finish arch, which world.gd places at the end of
-## the centerline (100% progress). TrackProgress samples the curve's far edge
-## exactly, so _best_offset can reach the baked length — see track_progress.gd.
-@export var stage_complete_percent := 100.0
 ## Orbit camera angular speed (rad/s) around the car during the start reveal.
 @export var start_orbit_speed := 0.5
 ## Orbit camera radius (m) out from the car.
@@ -856,10 +831,9 @@ func has_nitrous() -> bool:
 ## HP fraction below which the gauge flashes a low-HP warning.
 @export var hud_low_hp_warn_frac := 0.25
 
-# Automatic stuck-car recovery (features/progress.md): with big cliffs/drops a car can
-# get trapped INSIDE the lateral reset leash (nose-down in a pit, flipped, or pinned).
-# TrackProgress runs a watchdog that teleports it back to the last on-road pose (free —
-# no penalty) once it's been stationary and unable to self-recover for a short while.
+# Automatic stuck-car recovery: a watchdog teleports a trapped car (nose-down in a pit,
+# flipped, or pinned) back to the last on-road pose once it has been stationary and
+# unable to self-recover for a short while.
 ## Master toggle for the stuck watchdog. Off ⇒ only the timed off-track reset runs.
 @export var recovery_enabled := true
 ## Seconds the car must stay stuck (stationary + can't self-recover) before the
@@ -1064,9 +1038,8 @@ func has_nitrous() -> bool:
 @export var glow_strength := 1.2
 @export var glow_bloom := 0.1
 @export var glow_hdr_threshold := 0.7
-## Exponential distance fog. Demoted from "opaque wall hiding the ~75 m terrain
-## edge" to thin aerial haze now that DistantTerrain provides a far horizon — low
-## enough to see the distant hills + skybox. See todo/distant-terrain-and-sky.md.
+## Exponential distance fog: thin aerial haze, low enough to see the distant hills
+## and skybox.
 @export var fog_density := 0.0025
 ## How much the fog tints the sky (Environment.fog_sky_affect). Low so the skybox
 ## reads clearly above the haze.
@@ -1074,18 +1047,6 @@ func has_nitrous() -> bool:
 ## Fog / backdrop colour. Matched to the skybox's HORIZON (sampled from
 ## textures/sky_field.png) so the distant terrain dissolves into the field seam.
 @export var background_color := Color(0.482, 0.498, 0.403)
-## Coarse far-terrain backdrop (DistantTerrain) that gives the sky a horizon past
-## the detailed chunk ring. Disable to fall back to fog-only edge hiding.
-@export var distant_terrain_enabled := false
-## Margin (m) the static backdrop extends past the reachable corridor bounds.
-@export var distant_terrain_radius_m := 250.0
-## Backdrop grid spacing (m). Coarse is fine at distance; smaller = finer hills, more verts.
-@export var distant_terrain_cell_m := 10.0
-## Depth (m) the whole coarse backdrop is sunk below true terrain height, so the
-## detailed chunk ring always sits above it and the coarse mesh never pokes
-## through. No holes are cut in the backdrop (it underlaps the detail ring
-## entirely); at distance the slight step at the ring edge is imperceptible.
-@export var distant_terrain_sink_m := 1.5
 @export var terrain_tile_per_meter := 0.5 # ground texture tiles per metre, baked into terrain UVs
 ## Gravel/road texture tiles per metre. Independent of the ground tiling so the
 ## road can be finer or coarser than the surrounding grass.
@@ -1130,7 +1091,7 @@ func has_nitrous() -> bool:
 ## The dust colour the road/ground albedo is LERPED toward on a sandstorm stage (by
 ## sand_road_tint). Named by the condition's road_tint block in WeatherLibrary, so
 ## the tint colour is authored data like every other weather value rather than a
-## literal in world.gd — a future condition tinting toward snow-white needs no code.
+## literal in code — a future condition tinting toward snow-white needs no code.
 @export var sand_road_tint_color := Color(0.62, 0.5, 0.32)
 ## Global tyre μ multiplier on a sandstorm stage (Drivetrain.surface_tire_params),
 ## applied the same way as rain_grip_mult.
@@ -1293,13 +1254,13 @@ func has_nitrous() -> bool:
 @export var night_road_darken := 0.5
 ## The sky panorama a night stage swaps in, overriding whatever the REGION chose.
 ## Named by the night entry's `sky_panorama` key in WeatherLibrary, so a condition
-## that wants its own sky is authored data rather than a branch in world.gd. Empty
+## that wants its own sky is authored data rather than a branch in code. Empty
 ## string = keep the region's sky.
 @export var night_sky_panorama := "res://textures/sky-night.jpg"
 ## The sky every stage falls back to when its region does not name one (home and
 ## home_coast do not). Re-seeded on every stage boot BEFORE the region and weather
 ## looks are layered on, for the same reason `albedo_color` and `tarmac_color` are:
-## the PanoramaSkyMaterial is a shared sub-resource of main.tscn with no
+## the PanoramaSkyMaterial is a shared sub-resource of the scene with no
 ## resource_local_to_scene, so without a re-seed a Greece or night sky would follow
 ## the player into the next home stage.
 @export var default_sky_panorama := "res://textures/sky_field.png"
@@ -1366,18 +1327,6 @@ func has_nitrous() -> bool:
 @export var headlight_separation_frac := 0.62
 
 # Three stacked perlin noise layers: wavelength in metres, amplitude in metres.
-## Layer 1 wavelength (m): spacing of the largest, rolling hills.
-@export var terrain_layer1_wavelength := 300.0
-## Layer 1 amplitude (m): height of the largest, rolling hills.
-@export var terrain_layer1_amplitude := 30.0
-## Layer 2 wavelength (m): spacing of the mid-scale undulations.
-@export var terrain_layer2_wavelength := 40.0
-## Layer 2 amplitude (m): height of the mid-scale undulations.
-@export var terrain_layer2_amplitude := 2.0
-## Layer 3 wavelength (m): spacing of the finest surface bumps.
-@export var terrain_layer3_wavelength := 15.0
-## Layer 3 amplitude (m): height of the finest surface bumps.
-@export var terrain_layer3_amplitude := 0.0
 
 ## Logical render height of the WHOLE frame (3D and UI): a positive value renders
 ## at that fixed height; 0 follows the window height (device-native). Crisper
@@ -1400,7 +1349,7 @@ func has_nitrous() -> bool:
 
 # Colour grade over the stage's 3D frame — the Race Driver: GRID look (less
 # saturated, more contrasty, tinted a light warm brown). Pushed onto
-# shaders/ps1_post_process.gdshader by world.gd's _ready, and applied there
+# shaders/ps1_post_process.gdshader at level boot, and applied there
 # BEFORE the dither/quantise so the 5-bit banding lands in the graded palette.
 # Grades the world, props and sky ONLY: the HUD/menus sit on CanvasLayers drawn
 # after the post-process pass, and so do the speed lines. No per-target variants
@@ -1459,16 +1408,11 @@ func has_nitrous() -> bool:
 # Fake hemisphere-ambient + single-directional-sun shading (no light nodes, no
 # shadows, no extra render pass — see features/rendering.md). The CAR computes
 # it per-vertex in shaders/ps1_models_lit.gdshader (it rotates, so its lit side
-# changes each frame). The TERRAIN, which never moves under a sun that never
-# moves, bakes the identical math into its vertex colours ONCE at generation
-# time (terrain_manager._bake_light) — zero per-frame cost. Both share the sun
-# direction and colours below; each has its own amount.
+# changes each frame). Everything lit shares the sun direction and colours
+# below; each has its own amount.
 ## 0 = flat (unlit), 1 = full shading. Strength on the car.
 @export var car_light_amount := 1.0
-## 0 = flat (unlit), 1 = full shading. Strength baked into the terrain.
-@export var terrain_light_amount := 1.0
-## 0 = flat (unlit), 1 = full shading. Strength on billboard trees. Independent
-## of terrain_light_amount but conventionally kept equal so trees match the ground.
+## 0 = flat (unlit), 1 = full shading. Strength on billboard trees.
 @export var foliage_light_amount := 1.0
 ## Base wind sway at a tree's tip, as a fraction of its height — every weather
 ## condition unless it names its own "foliage_wind" field in WeatherLibrary (storm,
@@ -1492,85 +1436,22 @@ func has_nitrous() -> bool:
 ## Ambient colour on downward-facing surfaces (ground bounce).
 @export var ground_color := Color(0.35, 0.35, 0.35)
 
-## Total width of the generated track, in metres; cells within half this
-## distance of the centerline are coloured as track.
-@export var track_width := 7.0
-## Extra separation, in metres, required between non-adjacent track sections.
-## Only inflates the collision footprint used by the generator's overlap test —
-## the visible track stays `track_width` wide. Larger values stop the track from
-## looping back and running alongside itself too closely.
-@export var track_clearance := 8.0
 ## Seed for the deterministic track search.
 @export var track_seed := 2
-## Number of corners chained into the track.
-@export var track_turn_count := 30
-## Bias toward straighter, easier turns during track generation, in [0, 1]. 0 = no
-## bias (corners chosen freely, the default for free-roam); higher favours gentler
-## corners and longer connecting straights, yielding a less twisty stage.
-@export var track_straightness := 0.0
-## Length (m) of the straight runoff road appended AFTER the finish line, so the
-## car has room to skid to a stop past the arch. Treated as a real road piece: it is
-## collision-checked in the track generator (the finish corner backtracks if the
-## runoff won't fit) and baked into the terrain like the rest. The finish line/arch
-## and 100% progress stay at the END of the generated track, NOT the end of this
-## runoff. 0 disables it.
-@export var track_runoff_m := 30.0
-## Height (m) of the JUMP crest — the vertical bump TrackProfile adds on top of the
-## terrain height along a "Jump" piece's road (features/track.md). Together with
-## jump_span_m this sets the ONE number that matters: the speed above which a car
-## actually leaves the ground, TrackProfile.launch_speed() =
-## (span / PI) * sqrt(g / (2 * height)). Tune the pair to that threshold, not to how
-## tall the bump looks. 0 flattens every jump (the crest becomes a no-op).
-@export var jump_height_m := 2.0
-## Arc length (m) the JUMP crest is spread over, centred in its piece and clamped to
-## TrackProfile.PIECE_LENGTH_M so the crest's zero-slope ends stay inside the jump and
-## never disturb the neighbouring corners. Counter-intuitively a LONGER span is a
-## HARDER launch to trigger at the same height — see TrackProfile.launch_speed().
-@export var jump_span_m := 30.0
-## How forested this track is, in [0, 1] — the fraction of area covered by trees.
-## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
-## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. The default (1.0) keeps free-roam fully wooded.
-## Bushes ignore this (they scatter everywhere).
-@export var track_forestiness := 1.0
-## Wavelength, in metres, of the Perlin noise that breaks the trees into forest
-## patches (larger = bigger, smoother stands of forest separated by clearings).
-@export var forest_wavelength_m := 300.0
-## Width, in 0.5 m cells, of the smooth transition band just outside the road
-## edge where height and colour blend from the flat road to the true terrain.
-@export var track_transition_cells := 3
-## Fraction of this track surfaced as tarmac, in [0, 1]; the rest is gravel. The
-## track switches surface exactly ONCE along its length (gravel→tarmac or
-## tarmac→gravel, picked deterministically from track_seed), so this also fixes
-## where the switch sits. 0 = all gravel, 1 = all tarmac. The default (0) keeps free-roam all gravel.
-@export var track_tarmac_fraction := 0.0
-## Length, in metres ALONG the track, of the smooth feather where the surface
-## switches between gravel and tarmac — the lengthwise analogue of the
-## perpendicular grass↔road band (track_transition_cells). Both the road colour
-## and the per-wheel grip cross-fade over this band.
-@export var track_surface_transition_m := 6.0
 ## Solid fill colour for tarmac sections. TODO: replace with a proper tarmac
 ## texture (see todo/tarmac-texture.md) — for now a flat grey under the same
 ## baked terrain lighting as the rest of the floor.
 @export var tarmac_color := Color(0.36, 0.36, 0.38, 1)
 ## Neutral multiplier over the ground texture — the floor material's `albedo_color`
-## BASELINE. Re-seeded onto the material on every stage boot (world.gd._ready), which
+## BASELINE. Re-seeded onto the material on every level boot, which
 ## is what makes the weather road tint idempotent: it always modifies the authored
 ## value rather than the previous stage's already-tinted result. A region may override
 ## it with a "terrain_tint" look key.
 @export var terrain_tint := Color(1, 1, 1)
-## Lateral distance from the road centerline, in metres, within which track
-## progress accrues. Generous on purpose — you can run wide onto the verge / cut
-## across rough ground (rally!) and still bank the metres. The distance is measured
-## against a LOCAL window of the centerline (TrackProgress._local_closest_offset),
-## so this is independent of `track_clearance` and won't snap onto a different
-## track section. NOT a reset trigger — the off-track reset is time-based
-## (`off_road_reset_timeout_s`). It does still size the precomputed terrain
-## corridor (TerrainManager.corridor_coords), which is why it stays modest.
-@export var track_progress_max_dist_m := 15.0
 ## Master switch for the off-track auto-reset. Progress tracking (for the HUD)
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
-## Extra metres beyond the road EDGE (`track_width * 0.5`) the car must be before
+## Extra metres beyond the road EDGE the car must be before
 ## it counts as off the road and the reset clock starts. The road is a fixed width,
 ## so "off the road" is a clean geometric test; this margin keeps a wheel clipping
 ## the verge, or a slide that hangs the tail out, from starting the clock.
@@ -1584,98 +1465,9 @@ func has_nitrous() -> bool:
 @export var off_road_reset_timeout_s := 10.0
 ## Seconds off the road before the level view shows its "Off road" countdown to the reset.
 @export var off_road_warning_after_s := 2.0
-## Absolute world Y below which the car is considered to have fallen off the
-## world entirely (a void with no water plane) and is snapped back to the last
-## on-road pose (TrackProgress._best_reset), regardless of lateral distance from
-## the road. Used as a fallback floor; on tracks with water (`water_enabled`),
-## the per-track `track_water_level_m` (below) is the primary trigger instead,
-## since a track's flood height varies per rally event and can sit well above
-## this fixed floor.
-@export var fell_off_world_y := -50.0
 
-## Master on/off for roadside lakes (features/lakes.md). Off ⇒ no water is built
-## and the track generator ignores water entirely (existing events unaffected).
-@export var water_enabled := true
-## Flood height (world Y): terrain below this fills with water. Set per rally event
-## by event["water_level"]. Higher ⇒ more/bigger lakes in the same valleys.
-@export var track_water_level_m := -10.0
-## Small vertical margin (m) above the water level a cell must clear to carry road
-## or the start — keeps the road just off the waterline rather than skimming it.
-## Kept small: it's ADDED to water_level in the reject test, so a large value would
-## exclude most of the (low-amplitude) terrain and starve the track search.
-@export var water_shore_clearance_m := 0.3
-## Depth (m) below the per-track `track_water_level_m` at which the car is
-## considered to have fallen INTO the water (submerged, not just splashing at
-## the shore/surface) and is snapped back to the last on-road pose. Only
-## checked while `water_enabled` is on, since `track_water_level_m` is
-## meaningless otherwise.
-@export var water_submersion_reset_depth_m := 3.0
-## Extra linear drag applied to the chassis while in water (soft hazard — the car
-## slows but can still drive out; no reset).
-@export var water_drag := 6.0
-## Deep-water colour (flat, opaque — the surface is a solid PS1 colour block).
-@export var water_color := Color(0.16, 0.32, 0.5)
-## Shore/highlight colour blended in by the faint ripple.
-@export var water_shore_color := Color(0.32, 0.52, 0.62)
-## Speed of the scrolling ripple animation on the water surface.
-@export var water_ripple_speed := 0.15
-## Strength of the faint moving sparkle band on the water surface.
-@export var water_sparkle_strength := 0.25
 
-## Master toggle for track-side cliffs & drops (features/terrain.md). Off ⇒ the
-## terrain bake skips the cliff pass entirely (identity behaviour, zero cost).
-@export var cliff_enabled := true
-## Along-track period, in metres, of the 1-D camber noise that drives the cliffs —
-## how quickly a cliff swaps sides. GLOBAL (same for every event); only the height
-## is scaled by cliff_amount.
-@export var cliff_wavelength_m := 100.0
-## Scales the raw camber noise before the [-1, 1] clamp. Higher ⇒ the signal spends
-## more time saturated at ±1 (frequent full-height cliffs); lower ⇒ mostly gentle.
-@export var cliff_gain := 1.6
-## Global height ceiling, in metres: the cliff height (and equal drop depth) at
-## |camber| = 1 for a maximally cliffy event (cliffiness = 1). Scaled down per event
-## by cliff_amount.
-@export var cliff_max_height_m := 12.0
-## Horizontal run, in metres, from the road-edge band out to full height. Small ⇒
-## steep near-walls; large ⇒ gentle banks. (Heightfield terrain → no true overhangs.)
-@export var cliff_run_m := 2.0
-## Horizontal run, in metres, from full height back to natural grade, so the feature
-## is a localized berm/ditch that returns to grade (no backdrop seam), not a shelf.
-@export var cliff_fade_m := 30.0
-## Radius, in metres, of the post-bake morphological "open" that knocks down thin tall
-## cliff walls (e.g. the wall a hairpin's inner crook would leave). Walls narrower than
-## ~2× this in either axis are removed; wider cliffs/drops survive. 0 disables.
-@export var cliff_open_radius_m := 4.0
-## Scale on cliff_max_height_m, in [0, 1], for the main.tscn stage harness.
-@export var cliff_amount := 0.7
 
-## Painted lane lines (two solid edge lines + a dashed centre line) laid along the
-## TARMAC sections of the track so tarmac reads as tarmac (gravel stays bare). A
-## static unshaded mesh built once at generation; see scripts/road_markings.gd.
-@export var road_markings_enabled := true
-## Paint colour — a slightly weathered off-white rather than pure white so the
-## lines sit in the scene instead of glowing. Tinted per-vertex by the same baked
-## terrain light as the floor, so tune it against the lit road in-game.
-@export var road_marking_color := Color(0.82, 0.82, 0.78)
-## Width of each painted stripe, in metres.
-@export var road_marking_width_m := 0.12
-## How far inside each road edge (half the track width) the edge lines sit, in
-## metres. Keep it above road_marking_width_m * 0.5 so the stripe stays fully on
-## the road rather than spilling onto the verge.
-@export var road_marking_edge_inset_m := 0.4
-## Painted length of each centre-line dash, in metres.
-@export var road_marking_center_dash_m := 1.5
-## Unpainted gap between centre-line dashes, in metres.
-@export var road_marking_center_gap_m := 3.0
-## Height the paint is laid above the road surface, in metres — just enough to
-## avoid z-fighting with the (near-flat) road mesh without looking like it floats.
-@export var road_marking_height_m := 0.05
-## Minimum tarmac weight (0 = gravel, 1 = tarmac) a point needs before it is
-## painted, so the lines appear only on the tarmac side of the surface switch.
-@export var road_marking_tarmac_threshold := 0.5
-## Arc-length step, in metres, at which the centerline is sampled to build the
-## paint mesh. Smaller = smoother lines on tight corners at more vertices.
-@export var road_marking_sample_step_m := 0.4
 
 ## Gravel ruts laid behind the wheels while driving on the road (features/tire-marks.md).
 @export var tire_marks_enabled := true
@@ -1723,9 +1515,6 @@ func has_nitrous() -> bool:
 ## Height the ribbon sits above the wheel's contact patch, in metres (lifts it
 ## clear of the road surface so it never z-fights or clips under the terrain).
 @export var tire_mark_ground_offset_m := 0.1
-## Extra lateral allowance beyond the road half-width within which marks still lay
-## (so the verge of the gravel still marks), in metres.
-@export var tire_mark_gravel_margin_m := 0.3
 ## Fade each mark's opacity with how hard its tire is working, instead of laying every
 ## segment at its surface's ceiling. WHERE marks appear is identical either way, only how
 ## solid they are changes. See features/tire-marks.md.
@@ -1809,8 +1598,7 @@ func has_nitrous() -> bool:
 ## (DustPuffs, features/dust-puffs.md). Replaced the gravel clods; the wheel
 ## particles above now only throw off-road debris.
 @export var dust_puffs_enabled := true
-## Puff colour on a gravel road — the average of textures/gravel.jpg, so the dust is
-## the gravel's own colour (lit like the car, then jittered per puff). A region with its
+## Puff colour on a gravel road — the gravel's own colour (lit like the car, then jittered per puff). A region with its
 ## own gravel_texture authors its matching RegionLibrary look_of()["dust_color"].
 @export var dust_puff_color := Color(0.53, 0.49, 0.42)
 ## Puff colour on tarmac — near-white, since paved road has no gravel to colour it.
@@ -2030,30 +1818,11 @@ func has_nitrous() -> bool:
 ## around the lamp doesn't cut it in half while hills and other cars still hide it.
 @export var lamp_depth_bias_m := 0.3
 
-## Billboard tree sprites scattered around each track turn.
-## Master switch for stage foliage — trees, bushes and the bush hit volume. The
-## benchmark's vegetation toggle drives this (features/benchmark.md); normal play
-## leaves it on. Unlike trees_per_turn = 0 it skips the scatter work entirely.
-@export var vegetation_enabled := true
 ## How trees are cut out of their texture: the opaque traced silhouette, or a plain card cut out
 ## per pixel at half alpha (the old way), or a plain card blended by its alpha (soft edges). On a
 ## phone (2026-10-27) blend and opaque cost the same and the half-alpha cutout ~3 fps more; the
 ## benchmark can run any of them (features/benchmark.md).
 @export var tree_cutout_mode := 2
-## Target tree count per turn — drives the scatter grid's density (the actual count is
-## approximate, since foliage sits on a global jittered grid). 0 disables trees AND
-## bushes (they share these params).
-@export var trees_per_turn := 200
-## Radius, in metres, of the disc around each turn anchor that trees spawn in.
-@export var tree_spawn_radius_m := 50.0
-## Extra gap, in metres, kept between a tree and the visible road edge. Trees
-## are rejected on the road footprint inflated by this margin, so larger values
-## push the nearest trees further back from the track.
-@export var tree_road_margin_m := 1.0
-## How far each tree wanders from its grid-cell centre, as a fraction of the cell
-## (0 = a rigid lattice, 1 = anywhere in the cell). Spacing is inherent: two trees are
-## never closer than (1 - tree_jitter) x cell, so lower values look more regular.
-@export var tree_jitter := 0.6
 ## Tree size in metres: width (x) by height (y). Trees are opaque billboard
 ## cutouts, scaled so the card's height matches y and its width matches x.
 @export var tree_size_m := Vector2(7.5, 7.5)
@@ -2097,10 +1866,8 @@ func has_nitrous() -> bool:
 ## hard-stops). See TreeFall.plough_keep and features/trees.md.
 @export var tree_plough_keep_max := 0.8
 ## Distance (m) past which trees are fully culled — the value used on every target
-## EXCEPT a web TOUCH device (see tree_render_distance_web_touch_m). Defaults near
-## the loaded terrain extent (TerrainManager.RADIUS=3, CHUNK_M=50 -> ~175 m to the
-## ring edge; this default sits inside that). world.gd resolves the
-## effective value once at boot via tree_render_distance_for() and writes it back
+## EXCEPT a web TOUCH device (see tree_render_distance_web_touch_m). The level
+## resolves the effective value once at boot via tree_render_distance_for() and writes it back
 ## here, so all downstream readers (foliage, spectators) see it.
 @export var tree_render_distance_m := 120.0
 ## Foliage/world-prop cull distance (m) on a web TOUCH device (phone/tablet browser
@@ -2149,34 +1916,8 @@ func has_nitrous() -> bool:
 # Roadside boulders — low-poly Kenney meshes scattered like the bushes but WITH
 # collision. Density is per-region (RegionLibrary's `rock_density`), so only the
 # shared shape/size/hitbox knobs live here. See features/rocks.md.
-## Master switch for the rock scatter, mirroring vegetation_enabled for trees and
-## bushes. Off removes the meshes AND their hitboxes.
+## Master switch for the rock scatter. Off removes the meshes AND their hitboxes.
 @export var rocks_enabled := true
-## Base rock GROUP count per track turn, before the region's `rock_density` multiplier.
-## Counts clusters, not rocks — each one fans out into rock_group_min..max boulders
-## (see TreeScatter.cluster), so the rock count is roughly this times the mean group
-## size. Deliberately far below trees_per_turn: rocks carry collision, so a dense field
-## turns the verge into a wall, and they are meant to read as occasional hazards.
-@export var rock_groups_per_turn := 1.0
-## Smallest number of rocks in a group.
-@export var rock_group_min := 4
-## Largest number of rocks in a group. Clamped up to rock_group_min if authored below
-## it, so an inverted pair degrades to a fixed group size rather than to no rocks.
-@export var rock_group_max := 7
-## Radius (m) a group's rocks fan out to around their anchor. Companions land in the
-## OUTER HALF of this, so it sets how tight a cluster reads — too small and metre-wide
-## boulders interpenetrate, too large and the group stops reading as one outcrop.
-##
-## It has to move WITH the group size. Companions share a ring, so the spacing between
-## them is roughly the ring's circumference over the count: raising rock_group_max
-## without raising this packs more boulders onto the same ring until they intersect.
-@export var rock_group_radius_m := 9.0
-## Radius (m) around each turn anchor that rocks scatter into. Mirrors
-## tree_spawn_radius_m; together with rock_groups_per_turn it sets the scatter grid pitch.
-@export var rock_spawn_radius_m := 25.0
-## Positional jitter of a rock within its scatter cell (0 = a hard lattice, 1 = the
-## full cell). Mirrors tree_jitter.
-@export var rock_jitter := 0.7
 ## Height (m) of a rock at species scale 1.0 — THE size knob for the whole scatter.
 ## Each species multiplies this by its own entry in Foliage.ROCK_HEIGHT_SCALES,
 ## because the three models have very different aspect ratios (see that constant).
@@ -2205,52 +1946,6 @@ func has_nitrous() -> bool:
 ## Replaces their turquoise with a muted lichen green, so the cap reads as weathering
 ## rather than as a second object sitting on the stone.
 @export var rock_cap_color := Color(0.36, 0.40, 0.31)
-
-# Solid crash barriers along the OUTSIDE of the stage's sharp corners
-# (features/barriers.md). Planned by BarrierLayout, built by BarrierField from 2 m
-# BarrierSection modules stitched end to end. The look follows the road surface: the
-# steel armco guardrail on gravel, the precast concrete jersey rail on tarmac.
-# Unlike the spectators these are SOLID and in the damage obstacle group — hitting
-# one costs HP.
-## Master switch for the corner barriers. The benchmark's barriers toggle drives this
-## (features/benchmark.md); normal play leaves it on.
-@export var barriers_enabled := true
-## Length of one barrier module, in metres — the pitch a run is stitched at.
-@export var barrier_section_length_m := 2.0
-## Clear gap, in metres, between the visible road edge and the barrier's nearest face.
-## Measured to the face, so the armco and the wider-footed jersey rail leave the same gap.
-## KEEP `this + the barrier's own depth` (0.6 m at the jersey's foot) UNDER
-## `2 x tree_road_margin_m`, or trees start spawning inside the barrier's footprint —
-## the tree scatter rejects on the road inflated by that margin and knows nothing about
-## the barrier. See features/barriers.md.
-@export var barrier_road_gap_m := 0.4
-## How far, in metres, a run extends before the corner entry and past its exit, so the
-## barrier starts before the car needs it rather than exactly on the apex.
-@export var barrier_lead_m := 5.0
-## Tarmac-ness (0..1, as TerrainManager.surface_at reports) at or above which a module
-## uses the concrete jersey rail instead of the steel armco.
-@export var barrier_tarmac_threshold := 0.5
-## How far, in metres, each module is sunk into the ground. Small: enough that a rigid
-## module on slightly uneven verge buries its foot rather than floating above it.
-@export var barrier_sink_m := 0.06
-## How far OUT FROM THE ROAD EDGE, in metres, the hill-or-drop probe reads the ground.
-## A barrier only goes up where the land falls away; where the corner is cut into a bank
-## the hillside already stops the car. This MUST clear the road's flatten band
-## (`track_transition_cells`, 3 m by default) — inside it the carve pass has blended the
-## ground to road height, so every corner would read as flat.
-@export var barrier_slope_probe_m := 5.0
-## How far, in metres, the ground outboard of the barrier must sit BELOW the road before
-## the stretch counts as a drop worth guarding. Also the flat-ground cutoff: level verge
-## gets no barrier.
-@export var barrier_drop_min_m := 1.0
-## How far, in metres, the ground outboard of the barrier may rise ABOVE the road before
-## the stretch counts as banked (and so gets no barrier). Small but non-zero: terrain
-## noise puts a verge a few cm above road level even where the land genuinely falls away
-## further out, and a zero tolerance would veto those on a coin flip.
-@export var barrier_hill_tolerance_m := 0.15
-## Shortest barrier worth building, in modules. A one- or two-module stub reads as debris
-## on the verge rather than as a barrier, so stretches shorter than this are dropped.
-@export var barrier_min_run_modules := 3
 
 # Crowds of low-poly people trackside that react to the car (todo/roadside-spectators.md):
 # one group at the start, one at the end, and one at a random mid-stage point. While
@@ -2289,6 +1984,8 @@ func has_nitrous() -> bool:
 ## (delta accumulates so motion is unchanged over time), staggered across groups.
 ## Ambient crowd doesn't need a 60 Hz update; 2 halves the sim cost. Pure perf knob.
 @export var spectator_sim_interval := 2
+## How far (m) a spectator looks for road to step away from (the level view overrides it).
+@export var spectator_road_probe_m := 3.5
 ## Steering weights (relative pull of each preference).
 @export var spectator_w_separation := 1.5
 @export var spectator_w_flee := 4.0
@@ -2338,8 +2035,7 @@ func has_nitrous() -> bool:
 @export var texture_lod_bias := 0.75
 
 # --- Web-touch quality tier (todo/mobile-web-performance.md) -----------------
-# Every field below follows the SAME split as tree_render_distance_m /
-# terrain_lod_bands_m: a web TOUCH device (phone/tablet browser — the low-end
+# Every field below follows the SAME split as tree_render_distance_m: a web TOUCH device (phone/tablet browser — the low-end
 # target) gets the *_web_touch value, and EVERY other target (native mobile,
 # desktop, and desktop BROWSER) gets the base value. Resolve them through the
 # matching *_for(web, touch) function below, never by branching on Platform at
@@ -2360,61 +2056,6 @@ func has_nitrous() -> bool:
 ## no longer has to outlast a slow main-thread frame. Off = fill from _process.
 @export var threaded_engine_audio := true
 
-## Terrain LOD far-cutoff distances (metres), one per level boundary — the
-## coarsest level draws to the ring edge with no cutoff, so this has (levels - 1)
-## entries (TerrainLod.LOD_STRIDES has `levels`). The display mesh decimates by
-## distance so far ground costs a fraction of the near-flat 1 m tessellation; the
-## engine crossfades between levels via visibility_range. See features/terrain.md.
-## This set is the higher-quality one used on every target EXCEPT a web TOUCH device
-## (bands pushed farther out so finer terrain persists to match the longer desktop
-## render distance). world.gd resolves the effective set once at boot via
-## terrain_lod_bands_for() and writes it back here before apply_terrain_lod().
-@export var terrain_lod_bands_m: PackedFloat32Array = PackedFloat32Array([60.0, 100.0, 115.0, 120.0])
-## Terrain LOD bands used on a web TOUCH device (the low-end / 30fps target) — the
-## finer levels are dropped sooner to hold the frame budget. Picked by
-## terrain_lod_bands_for(web, touch).
-@export var terrain_lod_bands_web_touch_m: PackedFloat32Array = PackedFloat32Array([40.0, 70.0, 80.0, 90.0])
-## Downward skirt depth (metres) on each terrain chunk's LOD meshes, hiding the
-## crack where neighbouring chunks show different levels. Invisible under fog.
-@export var terrain_lod_skirt_m := 3.0
-## Chunk ring (Chebyshev distance, in chunks) around the car that carries live
-## collision. Farther loaded chunks are render-only, so their heightfield is not a
-## broadphase entry. 1 = the inner 3×3.
-@export var terrain_collision_ring := 1
-## When true, far corridor chunks skip generating the full-res grid at precompute and
-## prebake only the LOD levels their distance from the racing line can ever display.
-## Off = full precompute (every chunk full-res) — useful to A/B the loading cost.
-@export var terrain_precompute_prune_enabled := true
-## Extra reach (metres) added to a chunk's closest-possible camera distance when
-## deciding which LOD levels it can show. Must exceed the farthest the camera can sit
-## from the car so it never exposes a pruned level. Larger = more conservative (keeps finer
-## levels farther out). If the camera ever shows unbuilt terrain, RAISE THIS FIRST.
-@export var terrain_precompute_safety_slack_m := 25.0
-## Defer each full-res chunk's FINEST LOD level instead of prebaking it for the whole
-## corridor, rebuilding it on demand as chunks enter the detail ring.
-##
-## DEFAULT OFF (prebake every level at load) since 2026-07-30, on EVERY target
-## including web — deliberately NOT gated per-platform. Deferring saves VRAM but pays
-## for it with a mid-drive hitch: each on-demand rebuild is a measured ~6.2 ms, of
-## which ~67% is the 8 dictionary lookups per vertex in TerrainManager's
-## _vertex_color_row / _surface_uv2_row over 51x51 vertices, and a chunk crossing
-## queues a whole row of them (drained at terrain_detail_builds_per_frame).
-##
-## Windowed A/B on the benchmark stage, same seed (see features/terrain.md ->
-## "Lazy finest LOD level"):
-##   lazy (on)  -> frame p99 11.03 ms, 1% low  90.6 fps, VRAM +9.5 MB, cache 12.3 MB
-##   prebake    -> frame p99  4.52 ms, 1% low 221.3 fps, VRAM +35.1 MB, cache 10.7 MB
-## So prebaking costs ~+25.6 MB VRAM and SAVES ~1.6 MB RAM (the retained `l0_light`,
-## kept only to feed the lazy rebuild, becomes unnecessary) for a 59% better p99 and a
-## 2.4x better 1% low. Turn back ON only if a real device runs out of VRAM — that is
-## the trade this flag exists to express, in that direction.
-@export var terrain_lazy_finest_lod := false
-## Finest-level rebuilds allowed per rendered frame. A rebuild is a measured ~6.2 ms,
-## and a chunk boundary crossing brings a whole row in at once, so building them all in
-## one frame hitches; 1 clears a crossing in a handful of frames, well before the car
-## reaches them. Only reached when terrain_lazy_finest_lod is ON — with the default
-## (prebake) the detail queue stays empty, so this is the escape-hatch path's knob.
-@export var terrain_detail_builds_per_frame := 1
 
 # --- Value snapshots (the live config's IDENTITY is load-bearing) -------------
 #
@@ -2477,7 +2118,7 @@ func restore_values(snapshot: Dictionary) -> void:
 # see the field); native mobile the thermal ceiling (target_fps_mobile); desktop
 # — including a DESKTOP browser (web but not a touch device) — the higher one
 # (target_fps). Web-touch takes precedence since is_mobile_or_web() is also true
-# on web. Pure so world.gd can pass Platform queries and tests can pin any branch.
+# on web. Pure so the level can pass Platform queries and tests can pin any branch.
 # 0 = uncapped.
 func target_fps_for(mobile_or_web: bool, web: bool = false, touch: bool = true) -> int:
 	if web:
@@ -2488,15 +2129,9 @@ func target_fps_for(mobile_or_web: bool, web: bool = false, touch: bool = true) 
 # (phone/tablet browser — the same low-end target as target_fps_web) gets the
 # shorter tree_render_distance_web_touch_m; every other target (native mobile,
 # desktop, desktop browser) gets the longer tree_render_distance_m. Pure so
-# world.gd resolves it once at boot and tests can pin either branch.
+# the level resolves it once at boot and tests can pin either branch.
 func tree_render_distance_for(web: bool, touch: bool) -> float:
 	return tree_render_distance_web_touch_m if (web and touch) else tree_render_distance_m
-
-# Terrain LOD bands for the current target, split the same way as the render
-# distance above: web-touch gets the tighter terrain_lod_bands_web_touch_m, all
-# other targets the higher-quality terrain_lod_bands_m.
-func terrain_lod_bands_for(web: bool, touch: bool) -> PackedFloat32Array:
-	return terrain_lod_bands_web_touch_m if (web and touch) else terrain_lod_bands_m
 
 # Engine-synth mix rate for the current target, split the same way: a web TOUCH
 # device gets engine_mix_rate_web_touch, every other target the full rate. Pure
@@ -2563,14 +2198,6 @@ func engine_firing_phases() -> Array[float]:
 		out.append(fposmod(angle / 720.0, 1.0))
 	return out
 
-# The terrain layers as (wavelength, amplitude) pairs, for terrain generation.
-func terrain_layers() -> Array[Vector2]:
-	return [
-		Vector2(terrain_layer1_wavelength, terrain_layer1_amplitude),
-		Vector2(terrain_layer2_wavelength, terrain_layer2_amplitude),
-		Vector2(terrain_layer3_wavelength, terrain_layer3_amplitude),
-	]
-
 # Push every ps1_post_process.gdshader uniform onto a post-process material —
 # the dither grid plus the whole colour grade. Every target
 # renders at the same authored resolution, so both the dither grid and the grade
@@ -2600,8 +2227,7 @@ func weather_lit(col: Color) -> Color:
 
 # Whether the ground under this stage is SNOW rather than dirt with snow painted on.
 # Derived from the deep-snow values seated live (0.0 off snow), so there is no second
-# flag to keep in sync. Same shape as the
-# `frozen_water_grip > 0.0` gate the drivetrain already uses for ice.
+# flag to keep in sync.
 func ground_is_snow() -> bool:
 	return deep_snow_depth_m > 0.0
 
@@ -2762,10 +2388,8 @@ static func tire_surface_mult(snow_mult: float, tarmac_mult: float,
 		"tire_tarmac_grip_mult": tarmac_mult,
 	}, fill_tire_context({}, tarmac_weight, snowy, WeatherLibrary.WEATHER_DRY))
 
-# Push the fake car-lighting uniforms onto a ps1_models.gdshader material. Used
-# for every lit car mesh (chassis/cabin/wheels in world.gd, the MX-5 body in
-# car.gd) so the light parameters live in one place. Terrain materials are never
-# passed here, so they keep the shader's default light_amount of 0 (flat).
+# Push the fake car-lighting uniforms onto a lit car material, so the light
+# parameters live in one place.
 func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("light_amount", car_light_amount)
 	mat.set_shader_parameter("light_dir", sun_direction)
@@ -2800,102 +2424,6 @@ func apply_foliage_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("light_amount", foliage_light_amount)
 	_foliage_lit[mat.get_instance_id()] = weakref(mat)
 
-# Push the shared sun/ambient values + the terrain amount onto a TerrainManager,
-# which bakes them into vertex colours when chunks generate. Call BEFORE the
-# initial terrain build so the shading is baked into the first chunks.
-func apply_terrain_light(tm: TerrainManager) -> void:
-	tm.light_amount = terrain_light_amount
-	tm.sun_dir = sun_direction.normalized()
-	tm.sun_color = sun_color
-	tm.sky_color = sky_color
-	tm.ground_color = ground_color
-
-# Push the terrain LOD tunables onto the manager BEFORE the corridor precompute
-# (the LOD meshes + skirt are prebaked in cache_chunk from lod_skirt_m) and the
-# initial build. Mirrors apply_terrain_light.
-func apply_terrain_lod(tm: TerrainManager) -> void:
-	tm.lod_band_ends_m = terrain_lod_bands_m
-	tm.lod_skirt_m = terrain_lod_skirt_m
-	tm.collision_ring = terrain_collision_ring
-	tm.precompute_prune_enabled = terrain_precompute_prune_enabled
-	tm.precompute_safety_slack_m = terrain_precompute_safety_slack_m
-	tm.lazy_finest_lod = terrain_lazy_finest_lod
-	tm.detail_builds_per_frame = terrain_detail_builds_per_frame
-
-# Push the Cliffs group onto the terrain manager before bake_track (mirrors
-# apply_terrain_light). cliff_seed derives the camber noise from the stage's
-# track_seed so the whole stage is one deterministic function of the seed.
-func apply_cliffs(tm: TerrainManager) -> void:
-	tm.cliff_enabled = cliff_enabled
-	tm.cliff_wavelength_m = cliff_wavelength_m
-	tm.cliff_gain = cliff_gain
-	tm.cliff_max_height_m = cliff_max_height_m
-	tm.cliff_run_m = cliff_run_m
-	tm.cliff_fade_m = cliff_fade_m
-	tm.cliff_open_radius_m = cliff_open_radius_m
-	tm.cliff_amount = cliff_amount
-	tm.cliff_seed = track_seed
-
-# The scalar tree-scatter knobs packed into the Dictionary TreeScatter.scatter
-# expects. tree_size_m is rendering-only and passed separately to BillboardField.
-func tree_params() -> Dictionary:
-	return {
-		"points_per_turn": trees_per_turn,
-		"spawn_radius_m": tree_spawn_radius_m,
-		"jitter": tree_jitter,
-	}
-
-# The same packing for the ROCK scatter. `density` is the region's rock_density
-# multiplier (RegionLibrary), applied to the base count here rather than in world.gd
-# so every caller gets the regional weighting without having to remember it.
-#
-# Rocks get their own params rather than reusing tree_params() because the two have
-# opposite pressures: trees are dense scenery you drive past, rocks are sparse
-# obstacles you drive INTO, so their counts have to move independently — turning the
-# forest up must not turn the hazard field up with it.
-#
-# NOTE the count fed to TreeScatter is a count of GROUP ANCHORS, not of rocks — each
-# one is fanned out by TreeScatter.cluster afterwards.
-func rock_params(density := 1.0) -> Dictionary:
-	return {
-		"points_per_turn": rock_groups_per_turn * maxf(density, 0.0),
-		"spawn_radius_m": rock_spawn_radius_m,
-		"jitter": rock_jitter,
-	}
-
-# Everything BarrierLayout.plan + BarrierField.build need (features/barriers.md).
-# `track_width` and the shared world-prop render distance come along so the barrier
-# lines up with the road and culls with the rest of the roadside dressing.
-func barrier_render_params() -> Dictionary:
-	return {
-		"section_length_m": barrier_section_length_m,
-		"road_gap_m": barrier_road_gap_m,
-		"lead_m": barrier_lead_m,
-		"tarmac_threshold": barrier_tarmac_threshold,
-		"sink_m": barrier_sink_m,
-		"slope_probe_m": barrier_slope_probe_m,
-		"drop_min_m": barrier_drop_min_m,
-		"hill_tolerance_m": barrier_hill_tolerance_m,
-		"min_run_modules": barrier_min_run_modules,
-		"track_width": track_width,
-		"render_distance_m": tree_render_distance_m,
-		"render_fade_m": tree_render_fade_m,
-	}
-
-func road_marking_params() -> Dictionary:
-	return {
-		"enabled": road_markings_enabled,
-		"half_width": track_width * 0.5,
-		"color": road_marking_color,
-		"width_m": road_marking_width_m,
-		"edge_inset_m": road_marking_edge_inset_m,
-		"center_dash_m": road_marking_center_dash_m,
-		"center_gap_m": road_marking_center_gap_m,
-		"height_m": road_marking_height_m,
-		"tarmac_threshold": road_marking_tarmac_threshold,
-		"sample_step_m": road_marking_sample_step_m,
-	}
-
 # Everything SpectatorGroup.setup needs (todo/roadside-spectators.md). The collision
 # bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
 # the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
@@ -2912,7 +2440,7 @@ func spectator_params() -> Dictionary:
 		"accel_mps2": spectator_accel_mps2,
 		"active_radius_m": spectator_active_radius_m,
 		"sim_interval": spectator_sim_interval,
-		"road_probe_m": track_width * 0.5,
+		"road_probe_m": spectator_road_probe_m,
 		"anchor_dead_zone_m": spectator_separation_m,
 		"w_separation": spectator_w_separation,
 		"w_flee": spectator_w_flee,
@@ -2958,7 +2486,7 @@ func spectator_params() -> Dictionary:
 @export var hub_version_label_margin_px := 8.0
 
 # The frame cap held for the DURATION of world generation only (WorldRuntime.loading_cap, used
-# by world.gd). Loading awaits hundreds of frames, and a LOW cap makes each of
+# by LevelView). Loading awaits hundreds of frames, and a LOW cap makes each of
 # those yields idle away most of its frame budget instead of generating — measured on the web
 # export at 33.4 ms per awaited frame at cap 30 vs 8.3 ms uncapped. See features/loading.md.
 ## Loading-window cap (FPS) on non-touch targets (desktop/native). 0 = uncapped, which is the

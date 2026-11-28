@@ -44,7 +44,7 @@ func _ready() -> void:
 	add_to_group(SpeedLinesSetting.GROUP)  # so SpeedLinesSetting.apply() can reach us
 	var cfg: GameConfig = Config.data
 	_mat = _rect.material as ShaderMaterial
-	# Static look pushed once from config (mirrors world.gd's post-process wiring).
+	# Static look pushed once from config (mirrors the post-process wiring).
 	_mat.set_shader_parameter("line_color", cfg.speed_lines_color)
 	_mat.set_shader_parameter("density", cfg.speed_lines_density)
 	_mat.set_shader_parameter("inner_radius", cfg.speed_lines_inner_radius)
@@ -128,7 +128,7 @@ func _apply_intensity(value: float) -> void:
 # speed_lines_start_kmh: i.e. mid-acceleration off the start line, as a one-frame
 # stutter.
 #
-# world.gd's warm block auto-discovers every node implementing this
+# The host's warm block auto-discovers every node implementing this
 # warm_up()/clear_warm_up() pair and primes it behind the loading cover. The 3D
 # corridor pre-warm can't reach this one — it's a CanvasLayer overlay, not
 # something a camera fly can bring into view — so the contract is the only route.

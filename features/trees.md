@@ -1,15 +1,13 @@
 # Trees (billboard scatter around turns)
 
 **Source:** `scripts/foliage.gd` (`class_name Foliage` — the ONE place that owns
-the shared tree/bush meshes + materials), `scripts/tree_scatter.gd`
-(`class_name TreeScatter`), `scripts/billboard_field.gd`
+the shared tree/bush meshes + materials), `scripts/billboard_field.gd`
 (`class_name BillboardField`, trees), `scripts/tree_mesh_field.gd`
 (`class_name TreeMeshField`, bushes), `scripts/wind_sway.gd` (`class_name WindSway`)
 + `shaders/wind_sway.gdshaderinc` (the wind sway), `textures/tree.png` (home tree
-cutout), `models/vegetation/groundcover_opaque.glb` (bush ground cover). Wired in
-`scripts/world.gd._generate_track()`.
+cutout), `models/vegetation/groundcover_opaque.glb` (bush ground cover).
 
-**Tests:** `tests/headless/test_tree_scatter.gd`, `tests/headless/test_billboard_field.gd`,
+**Tests:** `tests/headless/test_billboard_field.gd`,
 `tests/headless/test_wind_sway.gd`
 
 Trees are ALWAYS billboards (`BillboardField`); bushes are ALWAYS low-poly 3D meshes
@@ -404,14 +402,6 @@ tree scatter; the bush scatter omits them (forestiness 1.0).
 
 ## Tests
 
-`tests/headless/test_tree_scatter.gd` — anchor centroid, determinism per seed,
-different seeds differ, no tree on a road cell, the grid's guaranteed minimum
-spacing `(1 - jitter) * cell`, within-radius of an anchor, density bounded by the
-grid cells a disc covers, a zero target placing nothing, an all-road area placing
-nothing, and the **forestiness gate** (1.0 = unfiltered, 0 = bare, monotonic in
-between, and every gated tree sits above the `1 - forestiness` noise threshold). Monotonic
-is all that is asserted — the mapping from forestiness to coverage is steeply nonlinear
-and deliberately not pinned, since it falls out of the noise distribution.
 `tests/headless/test_smoke.gd` — the billboard shader loads with code; a built
 `BillboardField` has one MultiMesh instance per position (with/without collision);
 `Foliage.spawn_trees()` always produces a `BillboardField`, and a region texture

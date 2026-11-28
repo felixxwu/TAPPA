@@ -219,8 +219,8 @@ func _tick(now: float) -> void:
 		_launch(fire["song"], fire["segment"], fire["from_offset"])
 
 
-# Enter the suspended state ON THE TRANSITION only. world.gd yields a frame between
-# every generation stage, so many processed frames during a load have stall-sized
+# Enter the suspended state ON THE TRANSITION only. The level build yields frames
+# throughout, so many processed frames during a load have stall-sized
 # gaps; the stop/clear must happen once, not every stall frame. While already
 # suspended, a fresh stall just resets the stable window.
 func _enter_suspend() -> void:
@@ -242,8 +242,8 @@ func _stop_voices() -> void:
 
 
 # Resume only once frames have flowed normally for the stable window AND no loading
-# screen is up. The group check is load-bearing: individual chunk-precompute frames
-# (world.gd) can be under threshold, so _stable_sec could satisfy the window
+# screen is up. The group check is load-bearing: individual build frames
+# can be under threshold, so _stable_sec could satisfy the window
 # mid-generation — only the group check prevents a mid-load resume. On resume we
 # re-seed from the current clock and start segment 0 of the scene's wanted song.
 func _try_resume(now: float) -> void:
@@ -300,10 +300,10 @@ func _song_for_context(menu_open: bool) -> String:
 # avoiding an immediate repeat of whichever one was actually just played.
 #
 # Also the single place that mutes/unmutes the "Engine" bus (see _ensure_engine_bus):
-# engine_audio.gd's EngineAudio nodes exist and _process (car.gd places $Car, and
-# world.gd calls apply_car on it, BEFORE track/terrain generation runs) well before
+# engine_audio.gd's EngineAudio nodes exist and _process (the car is placed and
+# apply_car runs BEFORE the level builds) well before
 # the loading screen drops, so without this the engine note is audible throughout
-# the whole load. The loading_screen group presence — not world.gd's applied_fps_caps
+# the whole load. The loading_screen group presence — not LevelView's applied_fps_caps
 # transition — is the right signal here: it's already polled every frame for the
 # song-repick above, and it tracks exactly when the overlay is actually on screen,
 # whereas the final fps cap lands at a different point on the staged-run path (before

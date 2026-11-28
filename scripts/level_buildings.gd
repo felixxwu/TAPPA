@@ -89,7 +89,7 @@ static func parse_bin(bytes: PackedByteArray) -> Array:
 	var at := 0
 	for b: Dictionary in list:
 		var np := int(b.np)
-		var nuv := np / 3 * 2
+		var nuv := int(np / 3.0) * 2
 		b["p"] = floats.slice(at, at + np)
 		b["n"] = floats.slice(at + np, at + np * 2)
 		b["uv"] = floats.slice(at + np * 2, at + np * 2 + nuv)
@@ -112,7 +112,7 @@ static func _convert(b: Dictionary) -> Dictionary:
 	var height := 0.0
 	var dark: float = Config.data.level_ao_building_base
 	var reach: float = maxf(Config.data.level_ao_building_base_height_m, 0.01)
-	for t in range(0, p.size() / 3, 3):
+	for t in range(0, int(p.size() / 3.0), 3):
 		for k in [t, t + 2, t + 1]:
 			verts.append(Vector3(p[k * 3], p[k * 3 + 1], p[k * 3 + 2]))
 			normals.append(Vector3(n[k * 3], n[k * 3 + 1], n[k * 3 + 2]))
@@ -157,15 +157,15 @@ func _building(b: Dictionary, height_at: Callable) -> StaticBody3D:
 	var geo := _convert(b)
 	var height: float = geo.height
 	var rot: float = b.rot
-	var len: float = b.L
+	var length: float = b.L
 	var wid: float = b.W
 	var x: float = b.x
 	var z: float = b.z
 	var ground := INF
 	for corner in [Vector2.ZERO, Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
-		var off := Vector2(corner.x * len / 2, corner.y * wid / 2).rotated(rot)
+		var off := Vector2(corner.x * length / 2, corner.y * wid / 2).rotated(rot)
 		ground = minf(ground, height_at.call(x + off.x, z + off.y))
-	var half := Vector2(len, wid) / 2.0
+	var half := Vector2(length, wid) / 2.0
 	boxes.append({"centre": Vector2(x, z), "axis": Vector2.RIGHT.rotated(rot), "half": half})
 	for k in range(-int(half.x), int(half.x) + 1):
 		for sy in [-half.y, half.y]:
@@ -178,7 +178,7 @@ func _building(b: Dictionary, height_at: Callable) -> StaticBody3D:
 	_append(geo, body.transform)
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(len, height, wid)
+	box.size = Vector3(length, height, wid)
 	shape.shape = box
 	shape.position.y = height / 2
 	body.add_child(shape)

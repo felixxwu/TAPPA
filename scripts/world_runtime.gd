@@ -1,12 +1,11 @@
 class_name WorldRuntime
 extends RefCounted
-# Docs: features/loading.md, features/rendering.md, features/snow-region.md
+# Docs: features/loading.md, features/rendering.md
 # — update in the same change as this file.
 # Tests: tests/headless/test_world_runtime.gd, tests/headless/test_world_fps_cap.gd.
 #
-# The world-host behaviour that world.gd needs: capping the frame rate while terrain builds
-# behind a loading cover, swapping the floor shader for deep snow, and pre-warming shaders in
-# front of the camera.
+# The world-host behaviour LevelView needs: capping the frame rate while the level builds
+# behind a loading cover, and pre-warming shaders in front of the camera.
 #
 # WHY A STATIC HELPER MODULE AND NOT A BASE CLASS: a static module is pure functions over
 # arguments the host already holds, unit-testable without instancing the scene, and leaves the
@@ -14,15 +13,7 @@ extends RefCounted
 # host wrappers that keep their existing names (the docs and the call sites reference them).
 
 
-# The two terrain shaders the floor material swaps between per stage. The base one is kept
-# deliberately free of a vertex stage (terrain is the heaviest geometry in the game and this
-# renderer targets low-end phones); the snow variant adds the off-road ground raise the Alps
-# need, so only a snow stage pays for it. See apply_deep_snow and
-# test_terrain_shader_has_no_vertex_stage.
-const TERRAIN_BASE_SHADER := preload("res://shaders/ps1_models.gdshader")
-const TERRAIN_SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
-
-# Frame cap applied for the DURATION of world generation only (see each host's _ready).
+# Frame cap applied for the DURATION of world generation only (see LevelView._ready).
 # Loading yields hundreds of frames, and a low cap makes each of those yields idle away most
 # of its frame budget instead of generating (verified on the web export: 33.4 ms per awaited
 # frame at cap 30 vs 8.3 ms uncapped). Bounded rather than uncapped on touch: running a phone
@@ -33,7 +24,7 @@ const TERRAIN_SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
 
 ## The loading-window frame cap for this platform. `touch` covers touch/web.
 ##
-## Called ONCE per world boot (each host's _ready), not per frame, so it reads the config here
+## Called ONCE per world boot (LevelView._ready), not per frame, so it reads the config here
 ## rather than caching — the cap it returns is then held for the whole load window.
 static func loading_cap(touch: bool) -> int:
 	return Config.data.loading_touch_max_fps if touch else Config.data.loading_max_fps
@@ -48,60 +39,9 @@ static func apply_fps_cap(caps: Array[int], cap: int, headless: bool) -> void:
 		Engine.max_fps = cap
 
 
-## Deep snow: draw the ground ABOVE the collision surface off-road, so the car sinks in
-## (features/snow-region.md). Collision is untouched, so the wheels rest at true ground
-## level; car.gd's matching drag is what makes it read as ploughing rather than floating.
-##
-## Done by SWAPPING THE SHADER rather than setting a uniform on the shared one, because the
-## base terrain shader is deliberately kept free of a vertex stage — terrain is the heaviest
-## geometry in the game and this renderer targets low-end phones. See the header of
-## ps1_terrain_snow.gdshader and test_terrain_shader_has_no_vertex_stage. Non-snow stages
-## therefore pay literally nothing: they run the same shader they always did.
-##
-## Must be called UNCONDITIONALLY every world boot, and that is load-bearing. The floor
-## material is a shared sub-resource of the host scene with no resource_local_to_scene, so it
-## survives every scene instantiation in the process. Without the else-branch restoring the
-## base shader, one snow stage would leave every later world's ground floating in mid-air.
-##
-## `floor_mat` is passed in because the two hosts reach their floor differently ($Floor vs a
-## cached TerrainManager accessor); a null material is a no-op.
-static func apply_deep_snow(floor_mat: ShaderMaterial, cfg: GameConfig) -> void:
-	if floor_mat == null:
-		return
-	if cfg.deep_snow_depth_m > 0.0:
-		if floor_mat.shader != TERRAIN_SNOW_SHADER:
-			floor_mat.shader = TERRAIN_SNOW_SHADER
-		floor_mat.set_shader_parameter("snow_depth", cfg.deep_snow_depth_m)
-	elif floor_mat.shader != TERRAIN_BASE_SHADER:
-		floor_mat.shader = TERRAIN_BASE_SHADER
-
-
-## True when the live TerrainLayer resources already match the configured (wavelength,
-## amplitude) pairs. Assigning `layers` triggers a full terrain regeneration, so both hosts
-## use this to skip a no-op assignment.
-static func layers_match(layers: Array[TerrainLayer], params: Array[Vector2]) -> bool:
-	if layers.size() != params.size():
-		return false
-	for i in layers.size():
-		if layers[i] == null or layers[i].wavelength_m != params[i].x \
-				or layers[i].amplitude_m != params[i].y:
-			return false
-	return true
-
-
-## Yield a frame so a freshly-set LoadingScreen step actually paints before the next blocking
-## generation call. A no-op under headless, where the await would otherwise spread world
-## generation across frames and break tests that inspect the world right after instantiating
-## the scene — there the whole _ready chain runs synchronously inside add_child(), as it did
-## before staged loading.
-static func yield_frame(tree: SceneTree, headless: bool) -> void:
-	if not headless and tree != null:
-		await tree.process_frame
-
-
 ## A point ~2 m in front of the active camera — where a warm-up instance is guaranteed to sit
 ## inside the frustum (so it actually draws and compiles its shader). `fallback` is what the
-## caller wants when no camera is up yet (world.gd uses its authored $Car), so the
+## caller wants when no camera is up yet (LevelView uses the car), so the
 ## fallback stays at the call site rather than being guessed here.
 static func warm_up_point(cam: Camera3D, fallback: Vector3) -> Vector3:
 	if cam != null:

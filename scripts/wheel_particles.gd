@@ -21,9 +21,7 @@ extends CpuParticlePool
 # wheel_particle_max no matter which surface the car is on, and it stays a single
 # draw call.
 #
-# Created + wired by world.gd._generate_track on a stage (reused across event
-# regenerations, re-targeted on a car swap, exactly like TireMarks), and by
-# level_view.gd on the level.
+# Created + wired by level_view.gd, exactly like TireMarks.
 # See features/wheel-dust.md.
 
 # Screen-aligned billboard with a per-instance roll/size/colour. BaseMaterial3D's
@@ -43,7 +41,7 @@ const PARTICLE_SHADER := preload("res://shaders/billboard_particle.gdshader")
 # N engine round-trips a frame murders mobile/WebGL).
 const STRIDE := 16
 
-# Surface gate thresholds against TerrainManager.surface_at (road_weight, tarmac_weight).
+# Surface gate thresholds against LevelView.surface_at (road_weight, tarmac_weight).
 # Below ROAD_WEIGHT_MIN the wheel is off the road footprint (grass); 0.5 is the midpoint
 # of the same feather band the road colour/grip blend across.
 const ROAD_WEIGHT_MIN := 0.5
@@ -53,14 +51,14 @@ var _car: Node                 # the VehicleBody3D (read for drivetrain + positi
 # Region override for the grass blade colour (RegionLibrary look_of()'s
 # "grass_particle_color", e.g. Greece's dry olive vs. the home world's green).
 # Alpha 0 means "unset" — fall back to GameConfig.wheel_particle_grass_color.
-# Set once by world.gd (which resolves the driven rally's region) right after
+# Set once by the host (which resolves the region) right after
 # setup()/retarget(); this pool has no region awareness of its own.
 var _grass_color_override := Color(0.0, 0.0, 0.0, 0.0)
 
 # Region override for the off-road particle's SHAPE (RegionLibrary look_of()'s
 # "grass_particle_square"). False — every region but the Alps — keeps the slim tall
 # blade. True swaps it for the square clod, because a snowfield throws powder,
-# not blades of grass. Seated by world.gd alongside the colour override.
+# not blades of grass. Seated by the host alongside the colour override.
 var _grass_square_override := false
 
 
@@ -68,20 +66,20 @@ func _stride() -> int:
 	return STRIDE
 
 
-# Called by world.gd after setup()/retarget() with the resolved region look's
+# Called by the host after setup()/retarget() with the resolved region look's
 # grass colour (or an unset Color() to fall back to the GameConfig default).
 func set_grass_color_override(c: Color) -> void:
 	_grass_color_override = c
 
 
-# Called by world.gd alongside set_grass_color_override: true makes the off-road
+# Called by the host alongside set_grass_color_override: true makes the off-road
 # particle a square clod instead of a grass blade (see _grass_square_override).
 func set_grass_square_override(square: bool) -> void:
 	_grass_square_override = square
 
 
 # Seat both region overrides (blade colour + shape) from a RegionLibrary look in one
-# call. world.gd calls it once per stage. A look that authors neither key
+# call. The host calls it once per level boot. A look that authors neither key
 # falls back to the GameConfig default blade.
 func apply_region_look(look: Dictionary) -> void:
 	set_grass_color_override(look.get("grass_particle_color", Color(0, 0, 0, 0)))

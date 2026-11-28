@@ -399,7 +399,7 @@ func _add_layer(parent: Node3D, t: Vector2i, buf: PackedFloat32Array, mesh: Arra
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
-	mm.instance_count = buf.size() / 12
+	mm.instance_count = int(buf.size() / 12.0)
 	mm.buffer = buf
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
@@ -434,9 +434,9 @@ static func hash2(x: int, y: int, s: int) -> float:
 
 # Per "<id>:<layer>", MultiMesh buffers (12 floats per tuft) for every cover cell within `reach` of `centre`.
 # With far_reach > 0, bush layers' instances out to that distance are also written (same transforms) into far_out.
-static func placements(cov: PackedByteArray, grid: int, kinds_d: Dictionary, centre: Vector2, reach: float, height: Callable, far_reach := 0.0, far_out := {}, tile := Rect2()) -> Dictionary:
+static func placements(cov: PackedByteArray, grid: int, kinds_d: Dictionary, centre: Vector2, reach: float, height: Callable, far_reach_m := 0.0, far_out := {}, tile := Rect2()) -> Dictionary:
 	var out := {}
-	var ext := maxf(reach, far_reach)
+	var ext := maxf(reach, far_reach_m)
 	var half := grid / 2.0
 	var c0 := maxi(0, floori(centre.x + half - ext))
 	var c1 := mini(grid - 1, ceili(centre.x + half + ext))
@@ -468,7 +468,7 @@ static func placements(cov: PackedByteArray, grid: int, kinds_d: Dictionary, cen
 					continue
 				var key := "%d:%d" % [id, li]
 				var near := cell_d <= reach
-				var far := far_reach > 0.0 and cell_d <= far_reach and str(layers[li][0].get("shape", "blades")) == "bush"
+				var far := far_reach_m > 0.0 and cell_d <= far_reach_m and str(layers[li][0].get("shape", "blades")) == "bush"
 				if not near and not far:
 					continue
 				if not lists.has(key):
@@ -569,8 +569,8 @@ static func _add_blades(g: Dictionary, rng: RandomNumberGenerator, s: Dictionary
 				_vert(g, p, c, Vector3.UP)
 				(g["tips"] as Array).append(p)
 		for i in n - 1:
-			var q := first + 2 * i
-			idx.append_array([q, q + 2, q + 1, q + 1, q + 2, q + 3])
+			var k := first + 2 * i
+			idx.append_array([k, k + 2, k + 1, k + 1, k + 2, k + 3])
 		var q := first + 2 * (n - 1)
 		idx.append_array([q, first + 2 * n, q + 1])
 	g["idx"] = idx

@@ -13,7 +13,7 @@ Both marks are **pure black**; only their opacity differs. See *Colour* below fo
 that is the whole design and not just a palette choice.
 
 The grass off the road footprint never marks. Created + wired by
-`free_roam.gd._ready`, or `world.gd._generate_track` on the test stage (reused across event regenerations).
+`level_view.gd` → `_add_effects`, which passes the `LevelView` as the terrain.
 
 **Tests:** `tests/headless/test_tire_marks.gd`, `tests/headless/test_drivetrain.gd`
 
@@ -103,25 +103,12 @@ over itself in a spin. Writing depth makes those crossings fight in the buffer, 
 blending them twice darkens every overlap into a blob so the marks stop reading as
 separate lines. `engine_smoke.gd` makes the same call for stacked puffs.
 
-## Ungated mode (free roam)
+## Surface
 
-`setup(centerline, …)` accepts a **null** centerline, which switches the node into
-*ungated* mode (`_ungated`). The Hafren level (`level_view.gd` → `_add_effects`) uses it: a road network has no single
-`Curve2D`, so there is no corridor to test against. The surface comes from `LevelView.surface_at`. A teleport (travel, respawn, road reset) calls `break_ribbons()` so no mark
-bridges the jump.
-In ungated mode:
-
-- the car-offset cache and both windowed nearest-point searches are skipped entirely
-  (`_pts` stays empty, `_baked_length` 0);
-- whether a wheel may mark is decided by the terrain's `surface_at()` alone: its road
-  weight (`.x`) must exceed `UNGATED_ROAD_WEIGHT_MIN`. Open ground reads as grass and breaks the ribbon,
-  the same outcome the stage's half-width gate produces;
-- the last-resort across-direction (see *Width and direction* below) falls back to the CAR's
-  right axis rather than a curve tangent.
-
-Everything else — the gravel/tarmac split, the force/grip-driven strength and colour,
-the ring buffers, the eager upload, the material and the shader warm-up — is shared.
-Supplying a centerline restores the stage's corridor gate; nothing else differs.
+`setup(car, terrain)` takes the terrain only for its `surface_at()`. Whether a wheel may mark
+is decided by the road weight (`.x`), which must exceed `ROAD_WEIGHT_MIN`; open ground reads as
+grass and breaks the ribbon. A teleport (travel, respawn, road reset) calls `break_ribbons()` so
+no mark bridges the jump.
 
 ## Width and direction
 
@@ -129,15 +116,14 @@ A segment point is the tyre's contact CENTRE, spread half the mark's width eithe
 along a unit XZ direction. Two rules, both in `tire_marks.gd`:
 
 - **The direction is perpendicular to TRAVEL, never to the tyre's heading** (`_across_dir`).
-  It used to come from the road normal (stage) / the car's right axis (overworld), i.e. from the
-  heading — which is only perpendicular to travel while the car tracks straight. In a slide or a
+  It used to come from the car's right axis, i.e. from the heading — which is only perpendicular to travel while the car tracks straight. In a slide or a
   spin the travel direction rotates away from the heading, and once travel lines up with the
   spread direction the pair's two verts advance ALONG the ribbon rather than across it:
   consecutive pairs go collinear and every quad collapses into a sliver. The mark went narrow
   exactly when the car was doing the thing that should mark most. Sources in order: this wheel's
   own travel since its last point, then the car's `linear_velocity`, then (only if the car is
   somehow at rest, which the speed gate already excludes) the old heading-derived normal
-  `_across_normal` / `_normal_at`.
+  `_across_normal`.
 - **The width is the TYRE's width** (`_tire_width_of`): `GameConfig.wheel_width_front` /
   `wheel_width_rear`, which `car.gd` writes from the fielded car's `CarLibrary` spec — the same
   numbers that size the tyre cylinders and feed load sensitivity. Steering wheels count as the
@@ -148,20 +134,12 @@ along a unit XZ direction. Two rules, both in `tire_marks.gd`:
 
 ## Per-tick logic
 
-Each `_physics_process` (skipped when `tire_marks_enabled` is off, the centerline
-is missing, or the car is gone):
+Each `_physics_process` (skipped when `tire_marks_enabled` is off or the car is gone):
 - **Speed gate** — below `tire_mark_min_speed_mps` every ribbon is broken (no marks
-  while parked / during the countdown).
-- **Offset cache** — one windowed nearest-offset on the centerline for the car
-  centre (`_windowed_offset`, the same local-search idea as `TrackProgress`),
-  seeding each wheel's tighter search.
+  while parked).
 - **Per wheel** (duck-typed on `is_in_contact()`, so `VehicleWheel3D` and test stubs
-  both work): gated by ITS OWN nearest road point (`_wheel_offset`, searched in a
-  tight window around the car's offset) — NOT the car's tangent, which on a corner
-  would wrongly reject a wheel that's on the road but ahead on the curve. When in
-  contact and within `track_width/2 + tire_mark_gravel_margin_m` of the centerline
-  (on the road, not the grass), the **surface** picks the mark
-  (`TerrainManager.surface_at`'s `tarmac_weight`, split at `0.5` — the same midpoint
+  both work): when in contact and on the road (see *Surface*), the **surface** picks the
+  mark (`surface_at`'s tarmac weight `.y`, split at `TARMAC_WEIGHT_MAX` — the same midpoint
   the road colour/grip feather across; terrain is null on the flat test fixtures,
   where everything reads as gravel):
   - **Gravel** (`tarmac_weight ≤ 0.5`): colour `tire_mark_color`, strength from
@@ -180,9 +158,7 @@ is missing, or the car is gone):
   append a ribbon segment — a left/right pair spread around the wheel's contact centre
   perpendicular to its TRAVEL (see *Width and direction*), at the wheel's
   **contact patch** (`y = hub.y − wheel_radius + tire_mark_ground_offset_m`, NOT
-  `terrain.height_at` — near the road the terrain mesh is flattened to the baked road
-  height the car rides on, so the raw noise height would sink the ribbon under the
-  road in cuts/dips). On the grass, below the strength floor, or airborne, the
+  `terrain.height_at`, which can sit under the road surface the car rides on). On the grass, below the strength floor, or airborne, the
   ribbon **breaks** (a fresh strip starts later, no line across the gap).
 - **Cap** — each wheel's segment list is a ring buffer of `tire_mark_max_segments`
   (oldest recycled, and its leading quad trimmed off the mesh buffer); only the
@@ -190,14 +166,6 @@ is missing, or the car is gone):
   cam looks forward, so far-behind marks are off-screen.
   The trail length is `tire_mark_max_segments × tire_mark_segment_step_m` — at the
   configured 20 × 0.5 m that is a **10 m** trail behind each wheel.
-
-## Centerline lookups (performance)
-
-`_search_offset` (car and per-wheel), the road gate and `_normal_at` do **not** call
-`Curve2D.sample_baked`. They read the shared baked centerline table that `TrackProgress`
-owns — `TrackProgress.baked_points(centerline)`, resolved once in `setup` — through the
-interpolating `point_on` accessor. See [progress.md](progress.md) → *Baked centerline
-table* for why, and for the rule that the lookup must interpolate rather than truncate.
 
 ## Colour
 
@@ -233,7 +201,7 @@ All in `GameConfig` (the "Tire Marks" group): `tire_marks_enabled`,
 `tire_mark_color`, `tire_mark_tarmac_color`, `tire_mark_width_m` (fallback only — the
 width normally comes from the tyre, see *Width and direction*),
 `tire_mark_min_speed_mps`, `tire_mark_segment_step_m`, `tire_mark_max_segments`,
-`tire_mark_ground_offset_m`, `tire_mark_gravel_margin_m`.
+`tire_mark_ground_offset_m`.
 
 Opacity: `tire_mark_alpha_enabled` (the master toggle),
 `tire_mark_gravel_full_force_n` (newtons for a solid gravel rut),
@@ -242,7 +210,7 @@ skid fades in across), `tire_mark_min_alpha` (below this nothing is laid).
 
 ## Tests
 
-`tests/headless/test_tire_marks.gd` — a straight `Curve2D` + stub car/wheels + a stub
+`tests/headless/test_tire_marks.gd` — a stub surface + stub car/wheels + a stub
 drivetrain (reporting a force and a grip usage) drive the logic without a vehicle or
 rendering. Placement: four ribbons collected, gravel ruts accumulate, none off the
 footprint (grass), a sub-step move adds nothing, the ring buffer caps the count, below
@@ -273,7 +241,7 @@ per-wheel state is published without the debug overlay, matches the overlay's `a
 The ribbon material has the same `gl_compatibility` first-visible-draw compile
 cost as the particle pools. `warm_up(pos)` draws a throwaway quad (same material)
 in front of the camera and `clear_warm_up()` frees it, so
-`world.gd._generate_track` primes the shader behind the loading overlay rather
+`LevelView`'s warm-up walk primes the shader behind the loading overlay rather
 than hitching on the first mark laid — see
 [wheel-dust.md → Shader warm-up](wheel-dust.md).
 

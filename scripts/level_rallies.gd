@@ -45,9 +45,9 @@ func show_active() -> void:
 			continue
 		for end in ["start", "finish"]:
 			var e: Dictionary = r[end]
-			var seed := variant_for(active, end, _lines.keys())
-			if _lines.has(seed):
-				add_child(line_model(e, _lines[seed], _ground))
+			var variant := variant_for(active, end, _lines.keys())
+			if _lines.has(variant):
+				add_child(line_model(e, _lines[variant], _ground))
 			crowd.append_array(crowd_groups(e))
 	if _spectators != null:
 		_spectators.set_extra(crowd)
@@ -89,13 +89,13 @@ static func line_model(e: Dictionary, line: Dictionary, ground: Callable) -> Nod
 # Spectator groups ({x, z, r, n}) along both sides of a line, behind its tape, leaving out the start control.
 static func crowd_groups(e: Dictionary) -> Array:
 	var out: Array = []
-	var basis := Basis(Vector3.UP, float(e.get("yaw", 0.0)))
+	var facing := Basis(Vector3.UP, float(e.get("yaw", 0.0)))
 	var origin := Vector3(float(e["x"]), 0.0, float(e["z"]))
 	for side in [-1.0, 1.0]:
 		var along := -AREA_HALF_L + CROWD_R
 		while along <= AREA_HALF_L - CROWD_R:
 			if along < CONTROL_ZONE.x or along > CONTROL_ZONE.y:
-				var p := origin + basis * Vector3(side * CROWD_SIDE_M, 0.0, along)
+				var p := origin + facing * Vector3(side * CROWD_SIDE_M, 0.0, along)
 				out.append({"x": p.x, "z": p.z, "r": CROWD_R, "n": CROWD_N})
 			along += CROWD_STEP_M
 	return out

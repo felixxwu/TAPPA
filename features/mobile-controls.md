@@ -1,7 +1,7 @@
 # Mobile / Touch Controls
 
 **Source:** `scripts/mobile_controls.gd` (`class_name MobileControls`, extends
-`CanvasLayer`). Node `MobileControls` (layer 3, above the HUD) in `main.tscn`.
+`CanvasLayer`). Node `MobileControls` (layer 3, above the HUD) in `level_view.tscn`.
 
 **Tests:** `tests/headless/test_mobile_controls.gd`, `tests/headless/test_web_fullscreen.gd`
 
@@ -45,7 +45,7 @@ read in `_ready` (`_scheme_from_save`, clamped to a valid id). It's a per-player
 preference, **not** a `GameConfig` field. `set_scheme(id)` switches at runtime
 (releasing anything held first) and rebuilds the overlay. Picking a scheme in the
 **in-run pause menu** calls this **live**: the `SettingsMenu.scheme_changed` signal is
-wired (in `main.tscn`) to the scene's `MobileControls.set_scheme`, so the on-screen
+wired (by `pause_menu.gd` → `_on_scheme_changed`) to the scene's `MobileControls.set_scheme`, so the on-screen
 controls rebuild the instant you choose a layout rather than only on the next run. (The
 title-screen Settings page has no live controls, so there it just saves.)
 
@@ -205,7 +205,7 @@ rest stop, map, stats, wrecked page) pauses the tree, so `_sync_paused` (run fro
 `_notification` on `NOTIFICATION_PAUSED` / `UNPAUSED`, and once in `_ready`) hides the
 overlay while paused and shows it again on resume. It toggles an inner `Overlay` Control
 (`_overlay()`, which every widget is parented to) rather than the layer's own `visible`,
-because photo mode writes that (`world.gd`), and the two must never
+because photo mode writes that (`photo_mode_host.gd`), and the two must never
 fight. Going in, it also releases every held action and forgets the tracked pointers,
 since a finger lifted while paused sends its release to a layer that isn't listening. On the web export `is_touchscreen_available()`
 reflects the browser's touch support, so it is true on phones and false on ordinary

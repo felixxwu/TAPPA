@@ -1,26 +1,23 @@
 // Fake headlight cone — the ONE source of truth, included by every shader the
-// headlights can fall on (ps1_models, ps1_terrain_snow, ps1_models_lit,
+// headlights can fall on (level_ground, level_prop, level_tree, ps1_models_lit,
 // billboard_opaque, tree_canopy). See
 // todo/night-weather-and-headlights.md.
 //
-// WHY THIS EXISTS AT ALL: terrain shading is baked into vertex colours on the CPU
-// (TerrainManager.vertex_colors writes ARRAY_COLOR per chunk), and the renderer has
-// NO light nodes anywhere — every shader is `unshaded`, so a SpotLight3D would do
-// nothing. Driving a moving light by rebaking those vertex colours would mean
-// regenerating ~127k verts every frame. Instead the cone is evaluated analytically
+// WHY THIS EXISTS AT ALL: the renderer has NO light nodes anywhere — every shader
+// is `unshaded`, so a SpotLight3D would do nothing. Instead the cone is evaluated analytically
 // from a handful of global uniforms, costing no draw calls, no geometry and no CPU
 // per-frame work beyond one uniform push.
 //
 // TRANSPORT: `global uniform` (declared in project.godot's [shader_globals] and set
 // via RenderingServer.global_shader_parameter_set) rather than per-material
-// parameters. The materials that need this are built in five different scripts with
-// no common registry, and terrain chunks stream in continuously — a per-material
-// push would need re-registration bookkeeping on every chunk load. Globals have
+// parameters. The materials that need this are built in several different scripts with
+// no common registry, and content streams in continuously — a per-material
+// push would need re-registration bookkeeping on every load. Globals have
 // none, and cannot go stale mid-frame.
 //
 // LEAK WARNING: global shader parameters persist across scene changes. The podium
 // and HQ share these shaders, so headlight_amount MUST be reset to 0 when entering any
-// non-stage scene — see world.gd/HeadlightCone.reset().
+// non-level scene — see HeadlightCone.reset().
 
 global uniform vec3 hl_pos;        // world-space cone apex, MIDPOINT between the lamps
 global uniform vec3 hl_dir;        // world-space aim, normalised and pitched on upload
@@ -135,9 +132,8 @@ float headlight_lit(vec3 world_pos, vec3 world_normal) {
 
 // THE CONE MUST BE ADDITIVE, NEVER A MULTIPLY.
 //
-// The darkening is not done in a shader at all: a low night_sun_energy_mult scales
-// tm.sun_color in world.gd::_apply_overcast_look, and the terrain bakes that dark
-// light into COLOR.rgb at chunk generation. By the time any of this runs, the world
+// The darkening is not done here: a low night_sun_energy_mult dims the sun before the
+// world's light is baked in. By the time any of this runs, the world
 // is ALREADY dark — so multiplying a near-zero light term by a bright cone factor
 // is still near zero. A multiplicative cone cannot re-light a darkened bake.
 //

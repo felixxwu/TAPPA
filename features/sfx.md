@@ -115,6 +115,5 @@ These are tunables — tests must not pin their values (see `CLAUDE.md` → Test
 ## Not yet wired
 
 The countdown beep, impact/wreck sounds, and UI clicks are all
-**still unwired**; the seam exists, the call sites don't. `scripts/stage_manager.gd`
-carries an explicit AUDIO HOOK comment at the GO transition. `todo/audio.md` tracks
+**still unwired**; the seam exists, the call sites don't. `todo/audio.md` tracks
 the full set.

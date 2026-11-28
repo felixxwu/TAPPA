@@ -3,11 +3,11 @@ render_mode unshaded, specular_disabled;
 
 // Applies wheel.png to the flat cap faces of the CylinderMesh (the outward-
 // facing faces you see from the side). The cylindrical rubber tread uses
-// albedo_color — the same uniform world.gd already writes for wheel colour,
-// so no world.gd changes are needed.
+// albedo_color — the same uniform already written for wheel colour,
+// so no host changes are needed.
 
 uniform sampler2D albedo_texture : source_color, filter_nearest, hint_default_white;
-// albedo_color = rubber tread colour (world.gd sets this to cfg.wheel_color).
+// albedo_color = rubber tread colour (set to cfg.wheel_color).
 // It does NOT tint the wheel texture — the cap shows the raw texture.
 uniform vec4 albedo_color : source_color = vec4(0.12, 0.12, 0.12, 1.0);
 

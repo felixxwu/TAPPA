@@ -8,8 +8,7 @@ var _mgr: Node
 var _save: Node
 
 
-# minimal_world() trims main.tscn's expensive terrain/track/foliage generation
-# (see scene_helpers.gd), and we build the scene ONCE for the whole script. The
+# The world is the cheap flat level (see scene_helpers.gd), built ONCE for the whole script. The
 # camera-cycle test wraps back to the default (net-neutral), so a single shared
 # instance is safe.
 #
@@ -18,22 +17,19 @@ var _save: Node
 # the "starts on chase" assertion is deterministic and so the test doesn't touch the
 # real profile.
 func before_all() -> void:
-	# Cameras/CameraManager need the wired world, but not its track shape
-	# or foliage — minimal_world() trims generation to a 1-turn, tree-free build.
-	SceneTestHelpers.minimal_world()
+	Config.reset()
 	_save = get_node("/root/Save")
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	_scene = load("res://main.tscn").instantiate()
-	add_child(_scene)
-	await get_tree().physics_frame  # let world._ready() generate + apply + build
+	_scene = await SceneTestHelpers.add_level_world(self)
 	_mgr = _scene.get_node("CameraManager")
 
 
 func after_all() -> void:
 	_scene.free()
-	Config.reset()  # minimal_world() zeroed foliage/track — restore the baseline for later files
+	SceneTestHelpers.remove_level_world()
+	Config.reset()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):

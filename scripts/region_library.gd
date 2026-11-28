@@ -10,10 +10,10 @@ extends RefCounted
 # gates nothing — it owns only its look and its waterline. See features/regions.md.
 
 
-# Whitelisted look-override keys (used by look_of + world.gd). Deliberately NOT here:
+# Whitelisted look-override keys (used by look_of + the level). Deliberately NOT here:
 # `map_image` (there is one world map now), `look_from` (the inherit-another-region's-look
 # idiom, resolved by look_of before this filter — see the note above REGIONS) and
-# `water_level` (needed by track generation, before the look is applied).
+# `water_level` (region data, not a look).
 const LOOK_KEYS := [
 	"sky_panorama", "grass_texture", "gravel_texture",
 	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
@@ -58,7 +58,7 @@ const DEFAULT_TREE_MIX: Array = [
 # table's authoring idiom, not internal plumbing. Worked examples below: `taiga` is home
 # with its own trees, `home_coast` is home with its own (much higher) waterline. `water_level` is
 # never inherited — every corner authors its own (a corner's `water_level` is its own). Ids are
-# load-bearing: "home" is hardcoded in world.gd._current_region_look(), so never rename it.
+# load-bearing: "home" is the default region, so never rename it.
 #
 # ADDING A ROW HERE:
 #   1. the row below (never invent a filename — `ls textures/`, see above);
@@ -67,7 +67,7 @@ const DEFAULT_TREE_MIX: Array = [
 const REGIONS: Array[Dictionary] = [
 	# The existing world. It authors its foliage split explicitly so the split is
 	# config-driven everywhere (100% home tree.png, 3D ground-cover bushes on); every
-	# other look field inherits the scene (main.tscn / hq_environment) + GameConfig
+	# other look field inherits the scene environment + GameConfig
 	# baseline unchanged, so the home world still looks byte-identical.
 	{
 		"id": "home", "order": 0, "name": "The Green",
@@ -149,7 +149,7 @@ const REGIONS: Array[Dictionary] = [
 	# The same forest look with the sea raised — a lakeland / forested shore.
 	# `water_level` is set MUCH higher than every other region's (all -12.0) so the
 	# lakes read as unmistakably flooded rather than merely "a bit wetter" — see
-	# features/regions.md / features/lakes.md.
+	# features/regions.md.
 	{
 		"id": "home_coast", "order": 3, "name": "The Lakes",
 		"look_from": "home",
@@ -210,9 +210,9 @@ const REGIONS: Array[Dictionary] = [
 		"grass_particle_square": true,
 		# Dust puffs on the snow road take its colour (snow-road.jpg averages this).
 		"dust_color": Color(0.75, 0.76, 0.78),
-		# NOT optional here, unlike in the other regions. world.gd drives BOTH
+		# NOT optional here, unlike in the other regions. The level drives BOTH
 		# env.background_color and env.fog_light_color off this, and the scene baseline
-		# in main.tscn is an olive green (0.482, 0.498, 0.403) chosen for the home
+		# is an olive green (0.482, 0.498, 0.403) chosen for the home
 		# forest. Left unauthored, the Alps inherit it and the distant terrain hazes
 		# GREEN behind white snow — the single most obvious thing wrong with the region
 		# before this was set. (Greece gets away with inheriting it because olive haze
@@ -221,11 +221,9 @@ const REGIONS: Array[Dictionary] = [
 		# Sampled from the horizon band of sky-snow.jpg (avg rgb 144,154,167) so the fog
 		# resolves into the panorama instead of banding against it.
 		"background_color": Color(0.567, 0.604, 0.658),
-		# Lane paint is buried; road_marking_color is deliberately omitted rather than
-		# set to white, which would read as fresh paint on a snowy road.
 
 		# --- Handling. NOT LOOK_KEYS, and deliberately so: folding them into look_of would
-		# leak non-look keys into the dict world.gd treats as look overrides. Same
+		# leak non-look keys into the dict the level treats as look overrides. Same
 		# reasoning that keeps `water_level` out of the whitelist.
 		#
 		# They name GameConfig fields rather than authoring numbers (the WeatherLibrary
@@ -239,13 +237,6 @@ const REGIONS: Array[Dictionary] = [
 			"depth": "snow_visual_depth_m",
 			"drag": "snow_deep_drag",
 		},
-		# The lakes up here are FROZEN: the water plane becomes a solid surface the car
-		# drives out onto and slides across, instead of the soft drag hazard it is in
-		# every other region. Same config-block indirection as the two blocks above.
-		# Only the GRIP is named here. The ice colours are read straight off GameConfig
-		# by LakeField.build — they are a global look for ice, not a per-region choice,
-		# and naming them here would be data nothing reads.
-		"frozen_water": {"grip": "ice_grip"},
 	},
 ]
 
@@ -304,12 +295,6 @@ static func surface_grip_of(cfg: GameConfig, region_id: String) -> Dictionary:
 static func deep_snow_of(cfg: GameConfig, region_id: String) -> Dictionary:
 	return _resolve_fields(cfg, by_id(region_id).get("deep_snow", {}))
 
-# The frozen-lake block — {grip, color, shore_color} — resolved from the named
-# GameConfig fields. {} when the region's water is liquid, which is every region but
-# the Alps, so the lake stays the soft hazard it has always been by default.
-static func frozen_water_of(cfg: GameConfig, region_id: String) -> Dictionary:
-	return _resolve_fields(cfg, by_id(region_id).get("frozen_water", {}))
-
 # Shared resolver for a {key: <GameConfig field name>} block.
 #
 # Returns the config values AS-IS, deliberately un-coerced: these blocks name floats
@@ -354,7 +339,7 @@ static func tree_mix(look: Dictionary) -> Array:
 static func spawns_bush_mesh(look: Dictionary) -> bool:
 	return bool(look.get("spawn_bush_mesh", true))
 
-# How many rocks this region scatters, as a MULTIPLIER on GameConfig.rock_groups_per_turn
+# How many rocks this region scatters, as a MULTIPLIER on the base count
 # (see features/rocks.md). 1.0 is the unremarkable middle every region gets by default;
 # stony regions author more, and a region whose ground is buried under snow authors
 # less. Clamped non-negative — 0.0 is a legitimate authoring choice meaning "no rocks

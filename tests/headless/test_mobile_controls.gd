@@ -6,30 +6,24 @@ extends GutTest
 # steer buttons, the simple both-sides-brake, and the pure tilt maths). Gated to
 # touch devices via mobile_controls_force.
 
-const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
-
 var _scene: Node3D
 var _controls  # MobileControls
 
 
 func before_all() -> void:
 	# Build the wired scene ONCE for the whole script — these tests exercise only the
-	# touch overlay, not the track/foliage, so minimal_world() trims generation to a
-	# 1-turn, tree-free build (~15s -> <1s), and a single shared instance avoids paying
-	# that per test. Per-test state (scheme, forced-on flag, injected input) is reset in
+	# touch overlay, so a single shared instance of the cheap flat level avoids paying a
+	# world build per test. Per-test state (scheme, forced-on flag, injected input) is reset in
 	# before_each/after_each so the shared instance stays order-safe.
-	SceneHelpers.minimal_world()
+	Config.reset()
 	Config.data.mobile_controls_force = true
-	_scene = load("res://main.tscn").instantiate()
-	add_child(_scene)
+	_scene = await SceneTestHelpers.add_level_world(self)
 	_controls = _scene.get_node("MobileControls")
 
 
 func after_all() -> void:
 	_scene.free()
-	# Config.reset() restores the authored baseline — both mobile_controls_force AND the
-	# minimal track/foliage minimal_world() set — so later files still generate the full
-	# world they expect.
+	SceneTestHelpers.remove_level_world()
 	Config.reset()
 
 
@@ -118,8 +112,7 @@ func test_scheme_ids_cover_the_valid_range() -> void:
 
 func test_hidden_on_desktop() -> void:
 	Config.data.mobile_controls_force = false
-	var scene: Node3D = load("res://main.tscn").instantiate()
-	add_child_autofree(scene)
+	var scene: Node3D = autofree(await SceneTestHelpers.add_level_world(self))
 	# Headless test host is not a touch device, so without the force flag the
 	# controls stay hidden.
 	assert_false(scene.get_node("MobileControls").visible,

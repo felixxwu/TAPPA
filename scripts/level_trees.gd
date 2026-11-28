@@ -105,7 +105,7 @@ func _material_for(kinds: PackedInt32Array) -> ShaderMaterial:
 # `free_view` (photo mode, the camera anywhere) skips the baked road visibility and shows every tree in reach.
 func update(cam_pos: Vector3, car_pos: Vector3, free_view := false) -> void:
 	var ts := Time.get_ticks_usec()
-	var row := bake.nearest_sample(cam_pos.x, cam_pos.z) / bake.vis_every if bake.has_visibility() and not free_view else -1
+	var row := int(bake.nearest_sample(cam_pos.x, cam_pos.z) / float(bake.vis_every)) if bake.has_visibility() and not free_view else -1
 	PerfLog.track(&"trees_nearest_row", Time.get_ticks_usec() - ts)
 	var cell := Vector2i(floori(cam_pos.x / LevelBake.TREE_TILE_M), floori(cam_pos.z / LevelBake.TREE_TILE_M))
 	if row != _row or cell != _cam_cell:
@@ -391,7 +391,7 @@ func _tile_or_make(i: int) -> Tile:
 	t.first = first
 	t.end = end
 	var n := bake.tree_tile_n
-	var origin := Vector2((i % n) * LevelBake.TREE_TILE_M - bake.size / 2, (i / n) * LevelBake.TREE_TILE_M - bake.size / 2)
+	var origin := Vector2((i % n) * LevelBake.TREE_TILE_M - bake.size / 2, int(i / float(n)) * LevelBake.TREE_TILE_M - bake.size / 2)
 	t.rect = Rect2(origin, Vector2.ONE * LevelBake.TREE_TILE_M)
 	var low := INF
 	var high := -INF

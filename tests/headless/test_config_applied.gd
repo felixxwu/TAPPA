@@ -1,25 +1,19 @@
 extends GutTest
 
 # The two scene-backed tests below (car + world values applied) are read-only
-# checks that config landed on the built scene, so share ONE minimal_world()
-# instance — that trims main.tscn's expensive terrain/track/foliage generation
-# (see scene_helpers.gd) while still wiring the car, world environment and
-# materials exactly as the full game does. Config is left at the minimal_world
-# baseline for the duration; every assertion compares the scene against the live
-# Config.data, so the trimmed track/foliage values don't affect them.
+# checks that config landed on the built scene, so they share ONE cheap flat level.
 var _scene: Node3D
 
 
 func before_all() -> void:
-	SceneTestHelpers.minimal_world()
-	_scene = load("res://main.tscn").instantiate()
-	add_child(_scene)
-	await get_tree().physics_frame  # let _ready() run
+	Config.reset()
+	_scene = await SceneTestHelpers.add_level_world(self)
 
 
 func after_all() -> void:
 	_scene.free()
-	Config.reset()  # minimal_world() zeroed foliage/track — restore the baseline for later files
+	SceneTestHelpers.remove_level_world()
+	Config.reset()
 
 
 func test_road_tile_per_meter_present() -> void:
@@ -63,21 +57,8 @@ func test_render_distance_for_selects_by_platform() -> void:
 	assert_eq(cfg.tree_render_distance_for(true, true), 111.0, "web touch gets the shorter web-touch distance")
 
 
-func test_terrain_lod_bands_for_selects_by_platform() -> void:
-	# Same web-touch-only split as the render distance, on the LOD band set.
-	var cfg := GameConfig.new()
-	var main := PackedFloat32Array([1.0, 2.0])
-	var web_touch := PackedFloat32Array([3.0, 4.0])
-	cfg.terrain_lod_bands_m = main
-	cfg.terrain_lod_bands_web_touch_m = web_touch
-	assert_eq(cfg.terrain_lod_bands_for(false, false), main, "desktop gets the main LOD bands")
-	assert_eq(cfg.terrain_lod_bands_for(false, true), main, "native touch (non-web) gets the main LOD bands")
-	assert_eq(cfg.terrain_lod_bands_for(true, false), main, "web desktop (non-touch) gets the main LOD bands")
-	assert_eq(cfg.terrain_lod_bands_for(true, true), web_touch, "web touch gets the tighter LOD bands")
-
-
 func test_target_fps_for_passes_through_uncapped() -> void:
-	# 0 means uncapped; the selector must not coerce it (world.gd gates on > 0).
+	# 0 means uncapped; the selector must not coerce it (the cap is applied only when > 0).
 	var cfg := GameConfig.new()
 	cfg.target_fps = 0
 	cfg.target_fps_mobile = 0
@@ -123,48 +104,23 @@ func test_car_values_applied() -> void:
 		assert_almost_eq(wheel.suspension_travel, travel, 0.001, str(wheel.name))
 		assert_almost_eq(wheel.wheel_rest_length, travel, 0.001, "rest length matches travel " + str(wheel.name))
 		# Wheel properties are stored as 32-bit floats; compare with tolerance.
-		assert_almost_eq(wheel.suspension_stiffness, cfg.suspension_stiffness, 0.001, "stiffness " + str(wheel.name))
-		# Dampers are derived from stiffness: critical damping on compression,
+		# Each axle's spring is the overall stiffness split by the car's weight distribution.
+		var k: float = cfg.axle_stiffness(wheel.position.z < 0.0)
+		assert_almost_eq(wheel.suspension_stiffness, k, 0.001, "stiffness " + str(wheel.name))
+		# Dampers are derived from the wheel's own stiffness: critical damping on compression,
 		# 1.5x that on rebound.
-		assert_almost_eq(wheel.damping_compression, sqrt(cfg.suspension_stiffness), 0.001, "compression " + str(wheel.name))
-		assert_almost_eq(wheel.damping_relaxation, 1.5 * sqrt(cfg.suspension_stiffness), 0.001, "relaxation " + str(wheel.name))
+		assert_almost_eq(wheel.damping_compression, sqrt(k), 0.001, "compression " + str(wheel.name))
+		assert_almost_eq(wheel.damping_relaxation, 1.5 * sqrt(k), 0.001, "relaxation " + str(wheel.name))
 		assert_almost_eq(wheel.wheel_radius, cfg.wheel_radius, 0.001, str(wheel.name))
 
 
 
 func test_world_values_applied() -> void:
 	var cfg: GameConfig = Config.data
-	var env: Environment = _scene.get_node("WorldEnvironment").environment
-	assert_almost_eq(env.fog_density, cfg.fog_density, 0.0001, "fog density from config")
-	assert_eq(env.background_color, cfg.background_color, "background color from config")
-	assert_eq(env.fog_light_color, cfg.background_color, "fog color matches background")
-	assert_eq(_scene.get_node("Floor").texture_tile_per_meter, cfg.terrain_tile_per_meter, "terrain tiling from config")
-	var floor_layers: Array[TerrainLayer] = _scene.get_node("Floor").layers
-	var cfg_layers := cfg.terrain_layers()
-	assert_eq(floor_layers.size(), cfg_layers.size(), "terrain layer count from config")
-	for i in floor_layers.size():
-		assert_eq(floor_layers[i].wavelength_m, cfg_layers[i].x, "layer %d wavelength from config" % i)
-		assert_eq(floor_layers[i].amplitude_m, cfg_layers[i].y, "layer %d amplitude from config" % i)
-	var chassis_mat: ShaderMaterial = _scene.get_node("Car/Chassis").get_surface_override_material(0)
-	assert_eq(chassis_mat.get_shader_parameter("albedo_color"), cfg.chassis_color, "chassis color from config")
-	var post_mat: ShaderMaterial = _scene.get_node("PostProcess").material
-	assert_eq(post_mat.get_shader_parameter("virtual_resolution"), cfg.virtual_resolution, "dither grid from config")
-	# Colour grade: assert every knob REACHES the shader, never what it is set to —
-	# these are authored look tunables, so comparing against cfg keeps the test
-	# value-agnostic under retuning. Unlike the dither grid above there is no
-	# per-target _for() accessor to mirror; a grade is resolution-independent.
-	for param in ["grade_amount", "grade_saturation", "grade_contrast", "grade_shadow_tint",
-			"grade_highlight_tint", "grade_vignette_strength", "grade_vignette_radius"]:
-		assert_eq(post_mat.get_shader_parameter(param), cfg.get(param), "%s from config" % param)
 	var tire_mat: ShaderMaterial = _scene.get_node("Car/WheelFL/Visual/Tire").get_surface_override_material(0)
 	assert_eq(tire_mat.get_shader_parameter("albedo_color"), cfg.wheel_color, "tire color from config")
-	# Tarmac fill colour: world.gd falls back to cfg.tarmac_color when the active
-	# region (here "home", the default with no rally/challenge active) authors no
-	# override, so this is a genuine config->shader pass-through, not a region look.
-	var floor_mat: ShaderMaterial = _scene.get_node("Floor").chunk_material
-	assert_eq(floor_mat.get_shader_parameter("tarmac_color"), cfg.tarmac_color, "tarmac color from config")
 	# Speed-lines shader params are authored twice — once as scene fallbacks on
-	# SpeedLines/ColorRect's material (main.tscn), once again from config at boot
+	# SpeedLines/ColorRect's material (level_view.tscn), once again from config at boot
 	# (speed_lines.gd:32-36) — so the scene values are dead and drift silently if
 	# they ever diverge from config. Assert the RELATIONSHIP (scene agrees with
 	# config), never the values themselves, so retuning speed_lines_* can't break
@@ -194,20 +150,6 @@ func test_speed_lines_config_defaults_present() -> void:
 		"inner radius (clear centre) sits inside the outer (full-strength) radius")
 
 
-func test_track_config_defaults_present() -> void:
-	var cfg := GameConfig.new()
-	# Track-gen knobs are tuned during balancing, so assert they're present and sane,
-	# not pinned to a specific value.
-	assert_gt(cfg.track_width, 0.0, "track width is positive")
-	assert_gt(cfg.track_turn_count, 0, "track has at least one corner")
-	assert_true(cfg.track_seed is int, "track_seed is an int")
-
-
-func test_track_transition_cells_default() -> void:
-	var cfg := GameConfig.new()
-	assert_gt(cfg.track_transition_cells, 0, "edge transition spans at least one cell")
-
-
 # --- Wiring of the promoted tuning clusters --------------------------------------------------
 #
 # Clusters of tuning constants moved out of scripts and into GameConfig (the overworld fog
@@ -218,8 +160,7 @@ func test_track_transition_cells_default() -> void:
 # never the authored number, which is a designer's to retune.
 #
 # Config.data is restored field-by-field rather than with Config.reset(), because the two
-# scene-backed tests above compare the built scene against the live Config.data and
-# minimal_world() deliberately zeroed part of it.
+# scene-backed tests above compare the built scene against the live Config.data.
 
 const _PROMOTED_FIELDS := [
 	"loading_max_fps", "loading_touch_max_fps",

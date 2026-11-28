@@ -1,7 +1,7 @@
 extends GutTest
-# TireMarks: gravel ruts laid behind the wheels (features/tire-marks.md). Driven
-# against a straight Curve2D with a stub car + stub wheels, so the gating /
-# emission / ring-buffer logic is tested without a real vehicle or rendering.
+# TireMarks: gravel ruts laid behind the wheels (features/tire-marks.md). Driven with a
+# stub car, stub wheels and a stub surface, so the emission / ring-buffer logic is
+# tested without a real vehicle or rendering.
 
 
 # Stub wheel: duck-typed like VehicleWheel3D (is_in_contact + global_position).
@@ -36,7 +36,7 @@ class StubDrivetrain:
 		return grip_usage
 
 
-# Stub terrain: reports (road_weight, tarmac_weight) like TerrainManager.surface_at.
+# Stub terrain: reports (road_weight, tarmac_weight) like LevelView.surface_at.
 # A constant tarmac-ness lets a test put the whole road on tarmac (or gravel).
 # Extends Node because TireMarks.setup() types the terrain argument as Node.
 class StubTerrain:
@@ -47,17 +47,12 @@ class StubTerrain:
 
 
 var _car: StubCar
-var _curve: Curve2D
 var _wheels: Array = []
 
 
 func before_each() -> void:
 	Config.reset()
 	Config.data.tire_marks_enabled = true
-	# A straight road 200 m along +Z (curve points are Vector2(world_x, world_z)).
-	_curve = Curve2D.new()
-	_curve.add_point(Vector2(0, 0))
-	_curve.add_point(Vector2(0, 200))
 	_car = StubCar.new()
 	add_child_autofree(_car)
 	_wheels = []
@@ -71,18 +66,18 @@ func after_each() -> void:
 	Config.reset()
 
 
-func _make(half_width := 3.0) -> TireMarks:
+func _make() -> TireMarks:
 	var tm := TireMarks.new()
 	add_child_autofree(tm)
-	tm.setup(_curve, _car, null, half_width)  # null terrain -> ground height 0
+	tm.setup(_car, null)
 	return tm
 
 
-func _make_with_terrain(terrain: StubTerrain, half_width := 3.0) -> TireMarks:
+func _make_with_terrain(terrain: StubTerrain) -> TireMarks:
 	add_child_autofree(terrain)
 	var tm := TireMarks.new()
 	add_child_autofree(tm)
-	tm.setup(_curve, _car, terrain, half_width)
+	tm.setup(_car, terrain)
 	return tm
 
 
@@ -102,10 +97,8 @@ func _laid_alpha(tm: TireMarks) -> float:
 
 
 # Drive the car (and its wheels) to world z and tick. Wheels are children of the
-# car, so each wheel's local x with the car at z puts it at world (x, 0, z) — car
-# and wheels advance together (the gravel gate searches the centerline around the
-# CAR's offset, so the wheels must stay near the car, as in real play). `xs` is the
-# per-wheel lateral offset from the centerline; pass fewer to leave wheels at 0.
+# car, so each wheel's local x with the car at z puts it at world (x, 0, z). `xs` is the
+# per-wheel lateral offset; pass fewer to leave wheels at 0.
 func _drive(tm: TireMarks, z: float, xs: Array) -> void:
 	_car.position = Vector3(0.0, 0.0, z)
 	for i in _wheels.size():
@@ -132,21 +125,11 @@ func test_warm_up_draws_then_clears() -> void:
 
 func test_marks_accumulate_on_gravel() -> void:
 	var tm := _make()
-	# Wheels straddle the centerline (|x| <= 3.3 gate) — on the gravel — advancing
-	# 1 m per tick (> the 0.5 m segment step).
+	# Advancing 1 m per tick (> the 0.5 m segment step).
 	for s in 6:
 		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
 	for i in 4:
 		assert_gt(tm.segment_count(i), 1, "wheel %d lays a ribbon on the gravel" % i)
-
-
-func test_no_marks_off_the_gravel() -> void:
-	var tm := _make()
-	# Wheels far to the side (x = 10 m > 3.3 gate) while the car drives the road.
-	for s in 6:
-		_drive(tm, s, [10.0, 10.0, 10.0, 10.0])
-	for i in 4:
-		assert_eq(tm.segment_count(i), 0, "wheel %d off the gravel lays no marks" % i)
 
 
 func test_marks_lay_on_gravel_surface() -> void:
@@ -316,24 +299,6 @@ func test_flipping_the_toggle_re_uploads_the_ribbons() -> void:
 			"wheel %d's surface carries the rebuilt material" % i)
 
 
-func test_corner_wheel_on_road_ahead_still_marks() -> void:
-	# Curved road: up +Z to (0,40), then a 90-degree turn running +X. A wheel that's
-	# on the post-bend road but well ahead of the car along the curve must still mark
-	# — it's gated by ITS OWN nearest road point (distance 0 here), not the car's
-	# tangent (against which it reads ~5 m off-axis and would be wrongly rejected).
-	var curve := Curve2D.new()
-	curve.add_point(Vector2(0, 0))
-	curve.add_point(Vector2(0, 40))
-	curve.add_point(Vector2(40, 40))
-	var tm := TireMarks.new()
-	add_child_autofree(tm)
-	tm.setup(curve, _car, null, 3.0)
-	_car.position = Vector3(0, 0, 35)            # just before the bend
-	_wheels[0].global_position = Vector3(5, 0, 40)  # on the post-bend road, 5 m along +X
-	tm._physics_process(0.0)
-	assert_gt(tm.segment_count(0), 0, "a wheel on the road ahead of the bend still marks")
-
-
 func test_sub_step_movement_adds_no_segment() -> void:
 	var tm := _make()
 	_drive(tm, 0.0, [])           # first point
@@ -491,11 +456,7 @@ func test_a_laid_mark_is_black_whatever_the_surface() -> void:
 		assert_gt(col.a, 0.0, "...and is visible through its alpha alone")
 
 
-# --- Ungated mode (the overworld) ---------------------------------------------
-#
-# setup() with a NULL centerline drops the corridor test entirely and lets the terrain's
-# surface answer decide, because the overworld has a road network rather than one curve.
-# See features/tire-marks.md -> "Ungated mode".
+# --- Road weight decides where marks lay --------------------------------------
 
 
 # Stub terrain whose ROAD weight is settable too, so a test can put a wheel on open
@@ -508,55 +469,43 @@ class StubSurface:
 		return Vector2(road, tarmac)
 
 
-func _make_ungated(terrain: Node) -> TireMarks:
+func _make_on(terrain: Node) -> TireMarks:
 	if terrain != null:
 		add_child_autofree(terrain)
 	var tm := TireMarks.new()
 	add_child_autofree(tm)
-	tm.setup(null, _car, terrain, 3.0)
+	tm.setup(_car, terrain)
 	return tm
 
 
-func test_ungated_lays_marks_far_from_any_centerline() -> void:
-	# Wheels 200 m off the (absent) corridor: with no centerline there is nothing to be
-	# off, so the marks still lay. The same drive would be rejected in gated mode.
-	var tm := _make_ungated(null)
+func test_marks_lay_anywhere_without_a_surface_query() -> void:
+	var tm := _make_on(null)
 	for s in 6:
 		_drive(tm, s, [-200.0, 200.0, -200.0, 200.0])
 	for i in 4:
-		assert_gt(tm.segment_count(i), 1, "wheel %d marks with no centerline to gate on" % i)
+		assert_gt(tm.segment_count(i), 1, "wheel %d marks with no surface to gate on" % i)
 
 
-func test_ungated_grass_does_not_mark() -> void:
-	# The terrain's ROAD weight is the ungated gate: open ground lays nothing.
+func test_grass_does_not_mark() -> void:
+	# The terrain's ROAD weight is the gate: open ground lays nothing.
 	var surface := StubSurface.new()
 	surface.road = 0.0
-	var tm := _make_ungated(surface)
+	var tm := _make_on(surface)
 	for s in 6:
 		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
 	for i in 4:
 		assert_eq(tm.segment_count(i), 0, "wheel %d lays nothing off a carved road" % i)
 
 
-func test_ungated_carved_road_marks() -> void:
-	# ...and the same drive on a carved road does mark, so the gate is the weight and
-	# not simply "ungated never marks".
+func test_road_marks() -> void:
+	# ...and the same drive on a road does mark, so the gate is the weight.
 	var surface := StubSurface.new()
 	surface.road = 1.0
-	var tm := _make_ungated(surface)
+	var tm := _make_on(surface)
 	for s in 6:
 		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
 	for i in 4:
 		assert_gt(tm.segment_count(i), 1, "wheel %d marks on a carved road" % i)
-
-
-func test_gated_mode_still_rejects_off_road_wheels() -> void:
-	# The ungated path is purely additive: supplying a centerline keeps the corridor gate.
-	var tm := _make()
-	for s in 6:
-		_drive(tm, s, [-200.0, 200.0, -200.0, 200.0])
-	for i in 4:
-		assert_eq(tm.segment_count(i), 0, "wheel %d is still gated when a centerline exists" % i)
 
 
 # --- Mark width and spread direction ------------------------------------------
@@ -578,7 +527,7 @@ func _newest_span(tm: TireMarks, wheel: int) -> float:
 
 
 # Drive the car (wheels co-located with it) `steps` metres along `dir`, with the velocity
-# pointing the same way, and tick each step. Ungated so no corridor can reject a heading.
+# pointing the same way, and tick each step.
 func _drive_along(tm: TireMarks, dir: Vector2, steps := 6) -> void:
 	var d := dir.normalized()
 	for s in steps:
@@ -595,7 +544,7 @@ func test_mark_width_survives_every_travel_direction() -> void:
 	# taken from the heading, the direction closest to the old across-axis collapsed the quads.
 	var want: float = Config.data.wheel_width_front
 	for dir in [Vector2(0, 1), Vector2(1, 0), Vector2(1, 1), Vector2(-1, 0.3), Vector2(0.2, -1)]:
-		var tm := _make_ungated(null)
+		var tm := _make_on(null)
 		_drive_along(tm, dir)
 		assert_almost_eq(_newest_span(tm, 0), want, 0.001,
 			"a mark travelling %s is still a full tyre wide" % dir)
@@ -607,7 +556,7 @@ func test_mark_width_follows_the_tyre_width() -> void:
 	for width in [0.12, 0.4]:
 		Config.data.wheel_width_front = width
 		Config.data.wheel_width_rear = width
-		var tm := _make_ungated(null)
+		var tm := _make_on(null)
 		_drive_along(tm, Vector2(0, 1))
 		assert_almost_eq(_newest_span(tm, 0), width, 0.001,
 			"a %.2f m tyre lays a %.2f m mark" % [width, width])
@@ -619,7 +568,7 @@ func test_rear_axle_uses_the_rear_tyre_width() -> void:
 	Config.data.wheel_width_rear = 0.32
 	_wheels[0].use_as_steering = true
 	_wheels[1].use_as_steering = false
-	var tm := _make_ungated(null)
+	var tm := _make_on(null)
 	_drive_along(tm, Vector2(0, 1))
 	assert_almost_eq(_newest_span(tm, 0), Config.data.wheel_width_front, 0.001,
 		"the steering wheel marks at the FRONT width")
@@ -633,23 +582,7 @@ func test_tire_mark_width_is_only_a_fallback() -> void:
 	# With no tyre width available (a spec authoring none) the GameConfig fallback applies.
 	Config.data.wheel_width_front = 0.0
 	Config.data.wheel_width_rear = 0.0
-	var tm := _make_ungated(null)
+	var tm := _make_on(null)
 	_drive_along(tm, Vector2(0, 1))
 	assert_almost_eq(_newest_span(tm, 0), Config.data.tire_mark_width_m, 0.001,
 		"tire_mark_width_m stands in when the tyre width is unknown")
-
-
-func test_gated_marks_also_spread_across_travel() -> void:
-	# The stage path gets the same fix: a car sliding sideways ACROSS a straight road still lays
-	# full-width marks. The road runs along +Z, so this drive is pure lateral travel inside the
-	# corridor gate.
-	var tm := _make()
-	var want: float = Config.data.wheel_width_front
-	for s in 6:
-		_car.position = Vector3(-1.5 + 0.5 * float(s), 0.0, 10.0)
-		_car.linear_velocity = Vector3(10.0, 0.0, 0.0)
-		for w in _wheels:
-			w.position = Vector3.ZERO
-		tm._physics_process(0.0)
-	assert_almost_eq(_newest_span(tm, 0), want, 0.001,
-		"a sideways slide on a stage road lays a full-width mark")

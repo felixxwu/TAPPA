@@ -857,7 +857,7 @@ func _stitch(verts: PackedVector3Array, heights: PackedFloat32Array, n: int, hl:
 			var c := Vector2i(0 if e == 0 else n - 1, j) if e < 2 else Vector2i(j, 0 if e == 2 else n - 1)
 			edge.append(heights[(c.y + hl) * m + c.x + hl])
 		for j in n:
-			var j0 := j / r * r
+			var j0 := int(j / float(r)) * r
 			var j1 := mini(j0 + r, n - 1)
 			var delta := lerpf(edge[j0], edge[j1], float(j - j0) / r) - edge[j]
 			if delta == 0.0:
@@ -873,7 +873,7 @@ func _stitch(verts: PackedVector3Array, heights: PackedFloat32Array, n: int, hl:
 func _restitch(ts: TileState, mask: int) -> void:
 	var verts: PackedVector3Array = ts.near_arrays[0]
 	var n := int(settings.near_tile_m / settings.near_stride_m) + 1
-	var hl := (roundi(sqrt(ts.near_heights.size())) - n) / 2
+	var hl := int((roundi(sqrt(ts.near_heights.size())) - n) / 2.0)
 	var m := n + 2 * hl
 	var depth := int(STITCH_BLEND_M / settings.near_stride_m)
 	var moved := false
@@ -1030,9 +1030,8 @@ func _cut_holes(coord: Vector2i) -> void:
 
 
 # Whether grid cell (cx, cz) of a chunk lies in one of the tiles set in `mask`.
-@warning_ignore("integer_division")
 static func _covered(mask: int, cx: int, cz: int, cells_per_tile: int, tpc: int) -> bool:
-	return (mask >> ((cz / cells_per_tile) * tpc + cx / cells_per_tile)) & 1 == 1
+	return (mask >> (int(cz / float(cells_per_tile)) * tpc + int(cx / float(cells_per_tile)))) & 1 == 1
 
 
 # `cells` (one byte per grid cell, 1 = covered) replaces `mask` when given: a mask holds at most
@@ -1132,15 +1131,15 @@ func _collide_tile(t: Vector2i) -> void:
 		return
 	var n := int(settings.near_tile_m / stride) + 1
 	var m := grid_n + 2
-	var data := PackedFloat32Array()
-	data.resize(n * n)
+	var samples := PackedFloat32Array()
+	samples.resize(n * n)
 	for gz in n:
 		for gx in n:
-			data[gz * n + gx] = heights[(off.y + gz + 1) * m + off.x + gx + 1]
+			samples[gz * n + gx] = heights[(off.y + gz + 1) * m + off.x + gx + 1]
 	var shape := HeightMapShape3D.new()
 	shape.map_width = n
 	shape.map_depth = n
-	shape.map_data = data
+	shape.map_data = samples
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	# HeightMapShape3D has unit cells, so the shape is scaled to the vertex spacing.
@@ -1618,9 +1617,9 @@ func _perimeter(n: int) -> PackedInt32Array:
 # The grid cell the chunk-border skirt segment t0 -> t1 hangs from.
 func _edge_cell(n: int, t0: int, t1: int) -> Vector2i:
 	var x0 := t0 % n
-	var z0 := t0 / n
+	var z0 := int(t0 / float(n))
 	var x1 := t1 % n
-	var z1 := t1 / n
+	var z1 := int(t1 / float(n))
 	if z0 == 0 and z1 == 0:
 		return Vector2i(mini(x0, x1), 0)
 	if z0 == n - 1 and z1 == n - 1:

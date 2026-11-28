@@ -2,26 +2,20 @@ extends GutTest
 # HUD speed readout: shows the car's airspeed (chassis velocity magnitude)
 # in km/h, gated by the hud_enabled config flag.
 
-const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
-
 var _scene: Node3D
 
 
 func before_all() -> void:
-	# The HUD tests don't care about the track or its foliage — minimal_world() boots
-	# main.tscn with a 1-turn track and no trees (~15s -> <1s), and we build it ONCE for
-	# the whole script. The HUD is driven by the car's state + config flags each frame;
-	# before_each restores those to a clean baseline so the shared instance is order-safe.
-	SceneHelpers.minimal_world()
-	_scene = load("res://main.tscn").instantiate()
-	add_child(_scene)
+	# Built ONCE for the whole script. The HUD is driven by the car's state + config flags
+	# each frame; before_each restores those to a clean baseline so the shared instance is
+	# order-safe.
+	Config.reset()
+	_scene = await SceneTestHelpers.add_level_world(self)
 
 
 func after_all() -> void:
 	_scene.free()
-	# minimal_world() left Config on a 1-turn / no-foliage track; restore the authored
-	# baseline so later files that don't reset Config (e.g. test_loading_screen) still
-	# generate the full world they expect.
+	SceneTestHelpers.remove_level_world()
 	Config.reset()
 
 
@@ -83,9 +77,9 @@ func test_hud_content_hides_while_the_tree_is_paused() -> void:
 func test_hud_hidden_when_disabled() -> void:
 	var cfg: GameConfig = Config.data
 	cfg.hud_enabled = false
-	var scene: Node3D = load("res://main.tscn").instantiate()
-	add_child_autofree(scene)
+	var scene := await SceneTestHelpers.add_level_world(self)
 	cfg.hud_enabled = true
+	autofree(scene)
 	assert_false(scene.get_node("HUD").visible, "HUD hidden when hud_enabled is off")
 
 

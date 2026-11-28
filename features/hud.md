@@ -1,7 +1,7 @@
 # HUD
 
 **Source:** `scripts/hud.gd` (extends `CanvasLayer`). Node `HUD` (layer 2) in
-`level_view.tscn` and the dev stage `main.tscn`, with `car` wired to the `Car`.
+`level_view.tscn`, with `car` wired to the `Car`.
 
 **Tests:** `tests/headless/test_hud.gd`,
 `tests/headless/test_hud_docs.gd` (a mechanical guard: parses `HUD.DEBUG_READOUT_NODES`
@@ -14,7 +14,7 @@ On-screen readout plus two interactive mode buttons.
 
 The HUD is `PROCESS_MODE_ALWAYS` and, while `get_tree().paused`, sets every direct Control
 child's `modulate.a` to 0 (restored on resume) and skips its refresh. Alpha rather than `visible`
-so `hud_enabled`, world.gd's photo-mode chrome and the gauges' fitted logic keep owning `visible`.
+so `hud_enabled`, photo mode's chrome and the gauges' fitted logic keep owning `visible`.
 
 ## Elements
 

@@ -14,15 +14,15 @@ extends RefCounted
 # blow the lit pool out to white.
 #
 # WHY GLOBALS, not material parameters: the materials that read the cone are built
-# in five different scripts (terrain_manager, billboard_field, foliage, sign_field,
-# mesh_util) with no common registry, and terrain chunks stream in continuously, so
-# a per-material push would need re-registration bookkeeping on every chunk load.
+# in several different scripts (billboard_field, foliage, sign_field, mesh_util) with
+# no common registry, and streamed content appears continuously, so a per-material
+# push would need re-registration bookkeeping on every load.
 # There are only ~10-30 live materials, so this is a correctness choice rather than
 # a performance one — globals cannot go stale when a chunk appears mid-frame.
 #
 # THE GLOBALS PERSIST ACROSS SCENES. That is the trap this class exists to guard:
 # the podium and the HQ render trees and ground with the same shaders, so a lit
-# stage that did not clear up after itself would leave a stray cone burning there. world.gd
+# stage that did not clear up after itself would leave a stray cone burning there. The host
 # calls reset() from _exit_tree(), which covers every exit path regardless of
 # destination.
 
@@ -104,7 +104,7 @@ static func params(cfg: GameConfig, xform: Transform3D, car_width_m: float = 0.0
 
 
 # Push the cone for a car pose. `xform` is the car's global transform; forward is
-# -basis.z (Godot convention, matching world.gd's camera maths).
+# -basis.z (Godot convention, matching the camera maths).
 static func push(cfg: GameConfig, xform: Transform3D, car_width_m: float = 0.0) -> void:
 	var vals := params(cfg, xform, car_width_m)
 	if vals.is_empty():

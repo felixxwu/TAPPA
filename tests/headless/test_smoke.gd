@@ -15,22 +15,30 @@ const TEST_PATH := "user://test_smoke_profile.json"
 var _scene: Node3D
 
 
-# main.tscn._ready() generates the full terrain + track, which is expensive, so
-# build it ONCE for the whole script instead of per-test. Every test here is a
-# read-only structural check except the two camera tests, which reset the car's
+class _FlatGround:
+	func height_at(_x: float, _z: float) -> float:
+		return 0.0
+
+	func light_at(_x: float, _z: float) -> Color:
+		return Color.WHITE
+
+
+# The whole script shares ONE cheap flat level. Every test here is a read-only
+# structural check except the two camera tests, which reset the car's
 # position/velocity themselves — so a single shared instance is safe.
 func before_all() -> void:
 	# The challenge tests below grant cars and start runs through the LIVE Save
 	# autoload, so point it at a throwaway profile before anything here can write.
 	SaveTestHelpers.redirect(TEST_PATH)
-	_scene = load("res://main.tscn").instantiate()
-	add_child(_scene)
-	await get_tree().physics_frame  # let world._ready() generate + apply + build
+	Config.reset()
+	_scene = await SceneTestHelpers.add_level_world(self)
 
 
 func after_all() -> void:
 	_scene.free()
+	SceneTestHelpers.remove_level_world()
 	SaveTestHelpers.cleanup(TEST_PATH)
+	Config.reset()
 
 
 func test_save_autoload_registered() -> void:
@@ -57,38 +65,6 @@ func test_music_director_autoload_is_registered() -> void:
 	var md := get_node_or_null("/root/Music")
 	assert_not_null(md, "Music autoload exists")
 	assert_true(md is MusicDirector, "autoload is a MusicDirector")
-
-
-func test_entering_a_rally_event_generates_its_track() -> void:
-	# Entering a stage = writing its (seed, turn_count, width) into Config.data,
-	# then generating — the same Config mutation pattern apply_car uses. Assert
-	# that flow builds a track without error.
-	var event := {"seed": 7, "turn_count": 4}
-	Config.data.track_seed = int(event["seed"])
-	Config.data.track_turn_count = int(event["turn_count"])
-	_scene._generate_track(Config.data)
-	# The flow completes and the scene is still valid (no crash building the
-	# rally's track from its seed).
-	assert_not_null(_scene.get_node("Floor"), "Floor present after generating the rally track")
-	assert_eq(Config.data.track_seed, int(event["seed"]), "rally event seed applied to Config")
-	Config.reset()  # don't leak the rally seed into other tests
-
-
-func test_spectator_groups_spawn_and_are_not_obstacles() -> void:
-	# The world places roadside spectator crowds (todo/roadside-spectators.md).
-	# At least one group should exist with standing members, and spectators must
-	# NOT be damage-dealing obstacles (people aren't trees).
-	var groups: Array = []
-	for child in _scene.get_children():
-		if child is SpectatorGroup:
-			groups.append(child)
-	assert_gt(groups.size(), 0, "world spawns spectator group(s)")
-	var total_upright := 0
-	for g in groups:
-		total_upright += g.upright_count()
-		assert_false(g.is_in_group(DamageModel.OBSTACLE_GROUP),
-			"a spectator group is not an obstacle")
-	assert_gt(total_upright, 0, "groups have standing spectators")
 
 
 func test_car_is_vehicle_with_four_wheels() -> void:
@@ -124,9 +100,12 @@ func test_chase_camera_sits_behind_direction_of_travel() -> void:
 func test_chase_camera_orbit_eases_but_always_looks_at_car() -> void:
 	var cam := _scene.get_node("ChaseCamera") as Camera3D
 	var car := _scene.get_node("Car") as VehicleBody3D
-	car.global_position = Vector3.ZERO
-	# Travel along +X; the camera should orbit to the -X side, but gradually.
+	# Facing and travelling along +X, with the camera starting off to the side (not
+	# wherever the spawn pose left it); it should orbit to the -X side, but gradually.
+	car.global_transform = Transform3D(Basis(Vector3.UP, -PI / 2.0), Vector3.ZERO)
 	car.linear_velocity = Vector3(10.0, 0.0, 0.0)
+	cam._travel_dir = Vector3.FORWARD
+	cam._look_yaw = 0.0
 	cam._physics_process(0.016)
 	# Look-at is exact every frame (not smoothed) but is NOT the car's centre: it's
 	# offset ahead along the car's facing by chase_look_ahead_ratio × half_length
@@ -146,7 +125,7 @@ func test_chase_camera_orbit_eases_but_always_looks_at_car() -> void:
 	# The threshold is a FRACTION of follow_distance, not the full reach: the camera
 	# height solve reads the cached terrain height under it and lifts the camera to
 	# clear the ground, which trades horizontal reach for height by an amount that
-	# depends on the terrain under the car (track seed). So we assert the orbit is
+	# depends on the ground under the car. So we assert the orbit is
 	# clearly BEHIND the car (well past centre) rather than pinning an exact reach.
 	for _i in range(120):
 		cam._physics_process(0.016)
@@ -185,7 +164,7 @@ func test_post_process_present() -> void:
 	assert_not_null(view.get_node("ViewCamera") as Camera3D, "mirror camera present")
 	assert_eq(container.mouse_filter, Control.MOUSE_FILTER_IGNORE, "post-process container ignores input")
 	assert_eq(container.scene_file_path, "res://post_process.tscn",
-		"the stage uses the shared post-process scene (same pipeline as the hub)")
+		"the level uses the shared post-process scene")
 
 
 func test_hud_speed_label_present() -> void:
@@ -194,22 +173,10 @@ func test_hud_speed_label_present() -> void:
 	assert_string_contains(label.text, "km/h", "speed label reads in km/h")
 
 
-func test_stage_flow_wired() -> void:
-	assert_not_null(_scene.get_node_or_null("StageManager") as StageManager,
-		"world wires a StageManager into the scene")
-
-
 func test_environment_has_fog_and_no_lights() -> void:
 	var env := (_scene.get_node("WorldEnvironment") as WorldEnvironment).environment
 	assert_true(env.fog_enabled, "fog enabled")
 	assert_eq(_scene.find_children("*", "Light3D", true).size(), 0, "no lights in scene")
-
-
-func test_floor_is_terrain_manager() -> void:
-	var floor_node := _scene.get_node("Floor")
-	assert_not_null(floor_node as Node3D, "Floor is the TerrainManager node")
-	assert_true(floor_node.has_method("height_at"), "manager exposes height_at")
-	assert_gt(floor_node.loaded_coords().size(), 0, "chunks loaded around the car at boot")
 
 
 func test_the_main_scene_is_a_known_boot_scene_and_it_loads() -> void:
@@ -224,18 +191,18 @@ func test_the_main_scene_is_a_known_boot_scene_and_it_loads() -> void:
 
 
 func test_shaders_load_with_code() -> void:
-	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader", "res://shaders/billboard_opaque.gdshader"]:
+	for path in ["res://shaders/ps1_post_process.gdshader", "res://shaders/billboard_opaque.gdshader"]:
 		var shader := load(path) as Shader
 		assert_not_null(shader, path + " loads")
 		assert_true(shader.code.length() > 0, path + " has code")
 
 
 func test_car_is_instance_of_car_scene() -> void:
-	# The car lives in car.tscn and is instanced into main.tscn and the flat
+	# The car lives in car.tscn and is instanced into level_view.tscn and the flat
 	# test fixture — both must use the same packed scene so the fixture tests
 	# exercise the real car.
 	assert_eq(_scene.get_node("Car").scene_file_path, "res://car.tscn",
-		"main.tscn instances the shared car scene")
+		"level_view.tscn instances the shared car scene")
 
 
 func test_flat_fixture_has_car_and_ground() -> void:
@@ -288,7 +255,7 @@ func test_car_has_engine_audio_player() -> void:
 
 
 func test_billboard_field_builds_instances_and_collision() -> void:
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var tex := load("res://textures/tree.png") as Texture2D
 	var field := BillboardField.new()
 	add_child_autofree(field)
@@ -318,7 +285,7 @@ func test_billboard_field_builds_instances_and_collision() -> void:
 
 
 func test_billboard_field_opaque_mesh_path_uses_silhouette_and_opaque_shader() -> void:
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var tex := load("res://textures/tree.png") as Texture2D
 	# A trivial 2-triangle silhouette stand-in (a unit quad) is enough to prove
 	# the field instances the SUPPLIED mesh with the opaque shader.
@@ -367,7 +334,7 @@ func _silhouette_stand_in() -> Mesh:
 
 
 func _opaque_billboard_field(positions: PackedVector2Array) -> BillboardField:
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var tex := load("res://textures/tree.png") as Texture2D
 	var field := BillboardField.new()
 	add_child_autofree(field)
@@ -406,7 +373,7 @@ func test_billboard_field_knock_down_fells_once_and_keeps_shapes() -> void:
 func test_billboard_field_knock_down_safe_without_collision_or_bad_index() -> void:
 	# Felling disables a hitbox, so a field built without collision (bushes) isn't
 	# fellable; out-of-range indices must also be safe no-ops.
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var tex := load("res://textures/tree.png") as Texture2D
 	var bodyless := BillboardField.new()
 	add_child_autofree(bodyless)
@@ -426,7 +393,7 @@ func test_opaque_billboard_size_jitter_scales_within_range_deterministically() -
 	# height, but a given position always resolves to the same size so build and
 	# felling-restore agree. Passing the floor explicitly keeps this test independent
 	# of the config value. Floor 1.0 (home trees) disables the jitter entirely.
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var tex := load("res://textures/tree.png") as Texture2D
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -457,7 +424,7 @@ func test_opaque_billboard_aspect_jitter_stretches_x_and_y_independently() -> vo
 	# trees read taller-and-narrower and others shorter-and-wider. Passing k explicitly
 	# keeps this independent of the config value. k=0 collapses to pure size jitter (a
 	# square-aspect scale). Deterministic per position so felling-restore agrees.
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var tex := load("res://textures/tree.png") as Texture2D
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -498,35 +465,8 @@ func test_opaque_billboard_aspect_jitter_stretches_x_and_y_independently() -> vo
 	assert_almost_eq(ps.x / size.x, ps.y / size.y, 1e-6, "k=0 keeps the authored aspect")
 
 
-func test_world_uses_tree_mesh_field_for_trees_and_bushes() -> void:
-	# Trees + bushes render as one colliding foliage field (trees, opaque
-	# BillboardField) and one non-colliding field (bushes, 3D-mesh TreeMeshField).
-	# The invariant: at least one colliding + one non-colliding field exists.
-	# (The shared scene may be re-generated by an earlier test, so don't assume an
-	# exact field count.)
-	var with_collision := 0
-	var without_collision := 0
-	for c in _scene.get_children():
-		if c is TreeMeshField:
-			var f := c as TreeMeshField
-			assert_gt(f.bin_count, 0, "each foliage field has at least one bin")
-			if f.get_node_or_null("Collision") != null:
-				with_collision += 1
-			else:
-				without_collision += 1
-		elif c is BillboardField:
-			var bf := c as BillboardField
-			assert_gt(bf.instance_positions.size(), 0, "each billboard field has instances")
-			if bf.get_node_or_null("Collision") != null:
-				with_collision += 1
-			else:
-				without_collision += 1
-	assert_gt(with_collision, 0, "world builds a colliding foliage field for trees")
-	assert_gt(without_collision, 0, "world builds a non-colliding foliage field for bushes")
-
-
 func test_billboard_field_without_collision_has_no_body() -> void:
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var tex := load("res://textures/tree-greece.webp") as Texture2D
 	var field := BillboardField.new()
 	add_child_autofree(field)
@@ -550,7 +490,7 @@ func test_spawn_trees_billboard_texture_selects_region_billboard() -> void:
 	# A region tree texture (Foliage.spawn_trees billboard_texture arg) selects that
 	# texture's star-shaped billboard cutout — that's how a region (e.g. Greece)
 	# swaps in its own tree. Trees are always a BillboardField.
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var tex := load("res://textures/tree-greece.webp") as Texture2D
 	var parent := Node3D.new()
 	add_child_autofree(parent)
@@ -577,7 +517,7 @@ func test_tree_silhouette_mesh_caches_per_texture() -> void:
 func test_tree_mesh_field_for_bushes_skips_collision_and_bakes_light() -> void:
 	# Bushes use the SAME TreeMeshField as trees, but with_collision = false and
 	# bake_terrain_light = true (ground cover that matches the ground tint).
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var mesh := BoxMesh.new()
 	var field := TreeMeshField.new()
 	add_child_autofree(field)
@@ -614,64 +554,6 @@ func test_tree_mesh_field_xz_radius_scales_with_height() -> void:
 		"zero-height mesh falls back to scale 1.0")
 
 
-# --- Corner barriers (features/barriers.md) -----------------------------------
-# Only the WIRING lives here (it needs the real scene + baked terrain). The builder's
-# own contracts — poses, slope pitching, batching, collision — are scene-free unit
-# tests in test_barrier_field.gd, and the planning rules in test_barrier_layout.gd.
-func test_world_plans_and_builds_barriers_on_a_sharp_corner() -> void:
-	# The wiring: world._build_barriers reads the live config, plans off the track's
-	# pieces, samples the baked surface, and drops a BarrierField into the scene.
-	# Driven with a synthetic bend so it does not depend on the fixture seed throwing
-	# a sharp corner.
-	var curve := Curve2D.new()
-	for z in range(0, 41, 4):
-		curve.add_point(Vector2(60.0, float(z)))
-	var centre := Vector2(76.0, 40.0)
-	for i in range(1, 10):
-		var a: float = PI - (i / 9.0) * (PI * 0.5)
-		curve.add_point(centre + Vector2(cos(a), sin(a)) * 16.0)
-	var pieces := [{"corner": "Hairpin", "flip": false, "straight": 40.0,
-		"entry_pos": Vector2(60.0, 0.0), "entry_heading": Vector2(0.0, 1.0)}]
-	# A barrier only goes up where the land falls away, and whether this synthetic bend
-	# happens to sit beside a drop is an accident of the fixture's terrain — so switch the
-	# terrain rule off for this test (accept any drop, never veto a rise). The rule itself
-	# is covered against known ground in test_barrier_layout.gd; what is under test here
-	# is the wiring.
-	var saved_drop: float = Config.data.barrier_drop_min_m
-	var saved_hill: float = Config.data.barrier_hill_tolerance_m
-	Config.data.barrier_drop_min_m = -1000.0
-	Config.data.barrier_hill_tolerance_m = 1000.0
-	_scene._build_barriers(Config.data, {"centerline": curve, "pieces": pieces})
-	Config.data.barrier_drop_min_m = saved_drop
-	Config.data.barrier_hill_tolerance_m = saved_hill
-	var fields := _scene.get_children().filter(func(c): return c is BarrierField)
-	# Exactly one, whether or not the fixture's own track threw a sharp corner: the
-	# build replaces any existing field rather than stacking a second one.
-	assert_eq(fields.size(), 1, "the world holds one barrier field")
-	var field: BarrierField = fields[0]
-	assert_gt(field.barrier_count, 1, "the sharp corner got a run of modules")
-	field.queue_free()
-
-
-func test_main_scene_generates_a_track() -> void:
-	await get_tree().physics_frame  # let world._ready() generate + apply + build
-	var floor_node = _scene.get_node("Floor")
-	assert_gt(floor_node.track_weights.size(), 0, "world applied a track (colour weights baked)")
-	assert_gt(floor_node.road_heights.size(), 0, "world baked road heights for flattening")
-	var ring: int = 2 * TerrainManager.RADIUS + 1
-	assert_eq(floor_node.loaded_coords().size(), ring * ring, "deferred ring is built once the track is applied")
-
-
-func _await_node(name: String) -> Node3D:
-	var n: Node3D = null
-	for _i in range(240):
-		n = _scene.get_node_or_null(name) as Node3D
-		if n != null:
-			return n
-		await get_tree().process_frame
-	return n
-
-
 func test_authored_wing_meshes_are_hidden_mesh_instances() -> void:
 	var car: Node = _scene.get_node("Car")
 	var wings := car.find_children("*_aero*", "Node", true, false)
@@ -697,7 +579,7 @@ func test_a_species_without_size_scale_keeps_the_profile_size_exactly() -> void:
 	# Every species that does not state proportions must be byte-identical to the
 	# profile, or adding this feature would silently resize every tree in the game.
 	var cfg: GameConfig = Config.data
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var parent := Node3D.new()
 	add_child_autofree(parent)
 	var field := Foliage.spawn_trees(parent, PackedVector2Array([Vector2(2, 2)]),
@@ -710,7 +592,7 @@ func test_size_scale_narrows_and_heightens_a_species_independently() -> void:
 	# The relation, not the numbers: the two axes must move independently, which a
 	# single uniform scale could not express.
 	var cfg: GameConfig = Config.data
-	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _FlatGround.new()
 	var parent := Node3D.new()
 	add_child_autofree(parent)
 	var field := Foliage.spawn_trees(parent, PackedVector2Array([Vector2(2, 2)]),

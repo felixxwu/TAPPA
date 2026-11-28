@@ -44,18 +44,6 @@ class _StubTerrain extends RefCounted:
 	func surface_at(_x: float, _z: float) -> Vector2:
 		return s
 
-# Reports a ground height as well, which the frozen-lake path needs to decide whether a
-# contact is over water. Kept separate from _StubTerrain so the tests above keep
-# exercising the "surface query only" shape that path must tolerate.
-class _StubTerrainWithHeight extends RefCounted:
-	var s := Vector2.ZERO
-	var height := 0.0
-	func surface_at(_x: float, _z: float) -> Vector2:
-		return s
-	func height_at(_x: float, _z: float) -> float:
-		return height
-
-
 func test_surface_grip_scales_mu_by_surface() -> void:
 	# surface_grip blends the configured grass/gravel/tarmac scales by the terrain's
 	# (road, tarmac) weights at the contact point. With no terrain it leaves μ alone.
@@ -633,85 +621,6 @@ func test_no_terrain_reports_full_road_weight_so_nothing_bogs() -> void:
 		"with no ground to sample the car must not be dragged by imaginary snow")
 
 
-# A frozen lake is something you SLIDE on, not something you bog in — however far off the
-# road it is, the ploughing drag must not fire out on the ice.
-func test_ice_reports_full_road_weight_so_the_snow_drag_stays_off() -> void:
-	var cfg: GameConfig = Config.data
-	var dt: Drivetrain = _car.drivetrain
-	var stub := _StubTerrainWithHeight.new()
-	dt.terrain = stub
-	cfg.frozen_water_grip = 0.2
-	cfg.track_water_level_m = 0.0
-	stub.height = -5.0          # submerged: this contact is on the ice
-	stub.s = Vector2(0.0, 0.0)  # and well off the road
-	assert_almost_eq(float(dt.surface_tire_params(cfg, Vector3.ZERO).road_weight), 1.0, 1e-6,
-		"ice must not plough, however far off the road the lake is")
-
-
-# --- Frozen lakes: ice OVERRIDES the surface blend -----------------------------
-# On a stage whose region freezes its water (features/snow-region.md), a contact over a
-# submerged cell is on ICE. What lies under the ice is irrelevant to the tyre, so the
-# blend is replaced rather than scaled — something a multiplier could not express.
-
-func test_ice_replaces_the_surface_blend_rather_than_scaling_it() -> void:
-	var cfg: GameConfig = Config.data
-	var dt: Drivetrain = _car.drivetrain
-	var stub := _StubTerrainWithHeight.new()
-	dt.terrain = stub
-	cfg.frozen_water_grip = 0.2
-	cfg.track_water_level_m = 0.0
-	stub.height = -5.0            # submerged: this contact is on the ice
-
-	stub.s = Vector2(0.0, 0.0)    # grass under the ice
-	var over_grass: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
-	stub.s = Vector2(1.0, 1.0)    # tarmac under the ice
-	var over_tarmac: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
-	assert_almost_eq(over_grass, over_tarmac, 1e-6,
-		"ice grip does not depend on what is beneath it")
-	assert_almost_eq(over_grass, cfg.frozen_water_grip, 1e-6,
-		"and it IS the ice value, not a scaled surface blend")
-
-
-func test_dry_land_on_a_frozen_stage_uses_the_normal_blend() -> void:
-	var cfg: GameConfig = Config.data
-	var dt: Drivetrain = _car.drivetrain
-	var stub := _StubTerrainWithHeight.new()
-	dt.terrain = stub
-	cfg.frozen_water_grip = 0.2
-	cfg.track_water_level_m = 0.0
-	stub.height = 5.0             # above the waterline: ordinary ground
-	stub.s = Vector2(1.0, 0.0)    # gravel road
-	assert_almost_eq(dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult, cfg.gravel_grip,
-		1e-6, "above the waterline the normal surface blend applies")
-
-
-func test_a_liquid_stage_never_takes_the_ice_path() -> void:
-	# 0.0 is the "not frozen" sentinel every region but the Alps runs.
-	var cfg: GameConfig = Config.data
-	var dt: Drivetrain = _car.drivetrain
-	var stub := _StubTerrainWithHeight.new()
-	dt.terrain = stub
-	cfg.frozen_water_grip = 0.0
-	cfg.track_water_level_m = 0.0
-	stub.height = -5.0            # submerged, but the water is liquid
-	stub.s = Vector2(0.0, 0.0)
-	assert_almost_eq(dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult, cfg.grass_grip,
-		1e-6, "a submerged contact on a liquid stage is just ordinary ground")
-
-
-func test_ice_degrades_safely_when_the_terrain_reports_no_height() -> void:
-	# A terrain-like provider may implement surface_at without height_at. That must fall
-	# back to ordinary ground, never error mid-stage.
-	var cfg: GameConfig = Config.data
-	var dt: Drivetrain = _car.drivetrain
-	var stub := _StubTerrain.new()   # surface query only
-	dt.terrain = stub
-	cfg.frozen_water_grip = 0.2
-	stub.s = Vector2(0.0, 0.0)
-	assert_almost_eq(dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult, cfg.grass_grip,
-		1e-6, "no height query available => ordinary ground")
-
-
 # --- Surface-dependent tyre compound (features/drivetrain-and-tires.md) --------
 #
 # The RULE first, as pure logic on GameConfig.tire_surface_mult, then the three
@@ -794,11 +703,9 @@ func test_a_snow_compound_trades_tarmac_grip_for_snow_grip() -> void:
 	cfg.deep_snow_depth_m = 0.0
 
 
-func test_the_tire_compound_reaches_the_off_terrain_and_ice_paths_too() -> void:
-	# Both early-return branches of surface_tire_params must route through the rule.
-	# The flat fixture matters because a headless physics test has no terrain at all;
-	# ice matters because a frozen lake is only ever authored by a snowy region, so it
-	# takes the SNOW side of the trade rather than the tarmac side.
+func test_the_tire_compound_reaches_the_off_terrain_path_too() -> void:
+	# A headless physics test has no terrain at all, so the no-terrain branch of
+	# surface_tire_params must route through the tyre rule too.
 	var cfg: GameConfig = Config.data
 	var dt: Drivetrain = _car.drivetrain
 	cfg.deep_snow_depth_m = 0.3
@@ -808,18 +715,7 @@ func test_the_tire_compound_reaches_the_off_terrain_and_ice_paths_too() -> void:
 	cfg.tire_snow_grip_mult = 1.2
 	assert_gt(dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult, flat_stock,
 		"the no-terrain fallback applies the compound")
-
-	var stub := _StubTerrainWithHeight.new()
-	dt.terrain = stub
-	stub.s = Vector2(1.0, 1.0)
-	stub.height = cfg.track_water_level_m - 1.0  # a contact out on the ice
-	cfg.frozen_water_grip = 0.2
-	var ice_snow_tyres: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
 	cfg.tire_snow_grip_mult = 1.0
-	var ice_stock: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
-	assert_gt(ice_snow_tyres, ice_stock, "ice takes the snow side of the trade")
-
-	cfg.frozen_water_grip = 0.0
 	cfg.deep_snow_depth_m = 0.0
 
 

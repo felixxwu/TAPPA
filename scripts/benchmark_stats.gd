@@ -5,8 +5,7 @@ extends RefCounted
 # Pure math for the replay benchmark's report (features/benchmark.md): turns
 # the per-frame sample streams benchmark/level_replay.gd records into its summary. No scene access — everything here is testable headless.
 
-# A frame interval at or over this counts as a dropped-frame spike — the same
-# threshold the PerfOverlay's spike log uses.
+# A frame interval at or over this counts as a dropped-frame spike.
 const SPIKE_MS := 28.0
 
 

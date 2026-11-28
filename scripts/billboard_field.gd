@@ -1,10 +1,10 @@
 class_name BillboardField
 extends Node3D
 # Docs: features/trees.md — update in the same change as this file.
-# Tests: tests/headless/test_billboard_field.gd, tests/headless/test_tree_scatter.gd — extend in the same change.
+# Tests: tests/headless/test_billboard_field.gd — extend in the same change.
 # Renders scattered positions as static card stars, using a caller-supplied
 # silhouette mesh + texture. Each instance is lifted onto the terrain via
-# TerrainManager.height_at; the mesh pivot is its bottom edge so sprites sit on
+# the terrain's height_at; the mesh pivot is its bottom edge so sprites sit on
 # the ground (the mesh is normalized: x in [-0.5,0.5], y in [0,1]). When
 # with_collision is true, a child StaticBody3D carries one box hitbox per instance,
 # all sharing a single BoxShape3D resource instanced via the physics server. Used

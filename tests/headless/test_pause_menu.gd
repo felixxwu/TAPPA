@@ -3,8 +3,7 @@ extends GutTest
 # and opens Resume + the shared Settings page (camera angle + mobile controls);
 # Resume unfreezes; and picking a camera in Settings switches the live CameraManager.
 #
-# main.tscn is built ONCE for the whole script (minimal_world trims the heavy
-# terrain/track generation). Every test resumes + closes the overlay at the end so
+# The cheap flat level is built ONCE for the whole script. Every test resumes + closes the overlay at the end so
 # the shared instance is order-safe, and after_all guarantees the tree is unpaused.
 
 const TEST_PATH := "user://test_pause_profile.json"
@@ -21,10 +20,8 @@ func before_all() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	SceneTestHelpers.minimal_world()
-	_scene = load("res://main.tscn").instantiate()
-	add_child(_scene)
-	await get_tree().physics_frame  # let world._ready() build the scene
+	Config.reset()
+	_scene = await SceneTestHelpers.add_level_world(self)
 	_pause = _scene.get_node("PauseMenu")
 	_mgr = _scene.get_node("CameraManager")
 	_mobile = _scene.get_node("MobileControls")
@@ -33,10 +30,7 @@ func before_all() -> void:
 func after_all() -> void:
 	get_tree().paused = false
 	_scene.free()
-	# minimal_world() trims the LIVE Config singleton (track_turn_count, trees_per_turn,
-	# rocks_enabled) and leaves restoring it to whoever runs next. Put it back here so a
-	# later file that reads ambient config doesn't silently inherit a stripped world —
-	# test_rocks.gd sorts after this one and restores only its own three fields.
+	SceneTestHelpers.remove_level_world()
 	Config.reset()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
@@ -44,13 +38,7 @@ func after_all() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-func before_each() -> void:
-	# Synthetic roster so tests that grant a car don't lean on a shipped catalogue entry.
-	CarFixtures.install()
-
-
 func after_each() -> void:
-	CarFixtures.restore()
 	# Never leak a paused tree / open overlay / live session into the next test (or file).
 	_pause.resume()
 
@@ -86,11 +74,11 @@ func test_photo_mode_with_no_host_keeps_the_menu() -> void:
 	fresh.resume()
 
 
-# world.gd arms the pause menu once the world has finished generating, so pause
+# LevelView arms the pause menu once the world has finished loading, so pause
 # is live for the actual run but was inert during loading.
 func test_world_boot_arms_the_pause_menu() -> void:
 	assert_true(_pause._input_enabled,
-		"world.gd enables the pause menu after generation completes")
+		"LevelView enables the pause menu after loading completes")
 
 
 func test_pause_freezes_game_and_opens_menu() -> void:
@@ -193,43 +181,6 @@ func test_reset_to_track_emits_and_resumes() -> void:
 		"pressing Reset to track requests the reset")
 	assert_false(get_tree().paused, "Reset to track unfreezes the game")
 	assert_false(_pause.is_open(), "Reset to track closes the overlay")
-
-
-# world.gd's handler snaps the live car onto the centerline beside its CURRENT
-# position (TrackProgress.manual_reset_pose), not back to the start line and not to
-# the frozen furthest progress. Firing the request lands the car exactly on that pose.
-func test_reset_to_track_snaps_car_onto_manual_reset_pose() -> void:
-	var car: Node3D = _scene.get_node("Car")
-	var track_progress = _scene._track_progress
-	assert_not_null(track_progress, "the run has a live TrackProgress")
-	# Shove the car off the road; the manual reset pose is computed from where it is now.
-	car.global_transform = car.global_transform.translated(Vector3(30, 5, 0))
-	var target: Transform3D = track_progress.manual_reset_pose()
-	_scene._on_reset_to_track_requested()
-	assert_almost_eq(car.global_transform.origin.distance_to(target.origin), 0.0, 0.01,
-		"Reset to track puts the car on the centerline beside its current position")
-
-
-# Regression: the teleport must SURVIVE the following physics steps. A bare
-# global_transform write on the RigidBody is discarded by the physics server unless it
-# happens inside the physics step, so a reset fired outside it (a menu signal) or on a
-# stuck/sleeping body used to revert next frame — the car appeared not to move at all.
-# Car.reset_to queues the pose for _integrate_forces, so it holds. Step physics and
-# assert the car is still on the reset pose (only settling gently under gravity).
-func test_reset_to_track_holds_across_physics_steps() -> void:
-	var car: Node3D = _scene.get_node("Car")
-	var track_progress = _scene._track_progress
-	car.global_transform = car.global_transform.translated(Vector3(30, 5, 0))
-	var target: Transform3D = track_progress.manual_reset_pose()
-	_scene._on_reset_to_track_requested()
-	for _i in 5:
-		await get_tree().physics_frame
-	# Horizontal position must not drift back toward where the car strayed; a little
-	# vertical settle under gravity is fine, so compare on the XZ plane only.
-	var d := Vector2(car.global_transform.origin.x, car.global_transform.origin.z) \
-		.distance_to(Vector2(target.origin.x, target.origin.z))
-	assert_almost_eq(d, 0.0, 1.0,
-		"Reset holds after physics steps instead of the server reverting the teleport")
 
 
 func test_settings_exposes_the_shared_menu() -> void:

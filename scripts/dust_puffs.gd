@@ -19,13 +19,12 @@ extends CpuParticlePool
 # Tarmac smokes only while a tyre slides (tarmac_smokes). Nothing is raised in the wet.
 #
 # Colour follows the surface: on gravel it is the gravel's own colour (GameConfig
-# dust_puff_color, matched to textures/gravel.jpg, or the region's "dust_color" look key
+# dust_puff_color, or the region's "dust_color" look key
 # matched to its gravel_texture); on tarmac it is a near-white dust_puff_tarmac_color;
 # where the deep snow is dragging the wheel it is white dust_puff_snow_color.
 # Grass raises nothing.
 #
-# Created + wired by world.gd._generate_track on a stage and level_view.gd on the
-# level, next to WheelParticles.
+# Created + wired by level_view.gd, next to WheelParticles.
 
 const PUFF_SHADER := preload("res://shaders/dust_puff.gdshader")
 
@@ -165,11 +164,11 @@ func _write_color(i: int, c: Color) -> void:
 
 
 # Store slot i's birth shape: a random tumble times an uneven per-axis stretch.
-func _set_shape(i: int, basis: Basis) -> void:
+func _set_shape(i: int, shape: Basis) -> void:
 	var s := i * 9
 	for r in 3:
 		for c in 3:
-			_shape[s + r * 3 + c] = basis[c][r]  # basis[c] is column c
+			_shape[s + r * 3 + c] = shape[c][r]  # shape[c] is column c
 
 
 func _hide_slot(i: int) -> void:

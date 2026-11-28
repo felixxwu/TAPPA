@@ -5,7 +5,7 @@ extends GutHookScript
 # at user://profile.json with a blank default carrying synthetic fixture cars
 # (fx_light_rwd). Any test that mutates the Save autoload without first pointing
 # Save.profile_path somewhere throwaway writes the REAL file — and there are dozens
-# of tests that instantiate main.tscn or the title scene, either of which can
+# of tests that instantiate the level or the title scene, either of which can
 # save from inside the scene's own lifecycle rather than from the test body. Relying
 # on every one of those files to remember the redirect is how the data loss happened.
 #
@@ -64,18 +64,18 @@ func run() -> void:
 # leaked, never who.
 #
 # The seams that existed before were both opt-in and neither was complete:
-#   * world.gd's per-instance `scene_change_hook` — every test holding a live main.tscn had to
-#     remember to install it, and most do not.
+#   * the old stage world's per-instance `scene_change_hook` — every test holding a live stage
+#     had to remember to install it, and most did not.
 #   * RallySession.auto_load_scenes — LOOKS like the seam for this and is not. It guards
 #     start_rally/advance only, while RallySession.abandon() emits rally_finished unguarded and
-#     world.gd turns that into a real transition. Several files call abandon() in teardown
+#     the stage world turned that into a real transition. Several files call abandon() in teardown
 #     precisely because it seemed like the safe way to clean up.
 #
 # So an author had to know which of two partial seams covered a transition they could not
 # easily predict was reachable. Making the safe state the DEFAULT removes the guesswork:
 # Scenes.change_to is the one point every production transition routes through, so arming this
 # flag makes them all inert. Tests asserting WHERE the game tried to go read
-# Scenes.last_blocked_path; world.gd's hook still runs first for tests that use it.
+# Scenes.last_blocked_path.
 func _suppress_real_scene_changes() -> void:
 	Scenes.block_real_changes = true
 	Scenes.last_blocked_path = ""

@@ -110,7 +110,7 @@ Covered by `test_level_view.gd` and `test_level_shop_specialties.gd`.
 ## Pause menu (`pause_menu.gd`)
 
 A `PauseMenu` `CanvasLayer`, `PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is
-frozen, in both `level_view.tscn` and the dev stage `main.tscn`. It owns a **top-right Pause
+frozen, in `level_view.tscn`. It owns a **top-right Pause
 button** bearing a pixel-art pause glyph (`icons/hud/pause.png` in a `PixelIcon`, since the font
 has no ⏸ glyph) that **freezes the game** (`get_tree().paused = true`) and shows **PAUSED** over a
 card list (`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**, **Reset**,
@@ -122,9 +122,7 @@ settings page starts hidden, and `open()` selects the first card, so every openi
 road", "Quit to title") for every host.
 
 **Reset** emits `reset_to_track_requested`; the menu owns no car reference, so the host performs
-it — free roam's `RoadRecovery.reset_now`, the dev stage's `world.gd` via
-`TrackProgress.manual_reset_pose()` (a fresh nearest point on the centreline, not the
-furthest-progress `recovery_pose()`). It is the **only** player-facing reset — there is no
+it — `RoadRecovery.reset_now`. It is the **only** player-facing reset — there is no
 direct reset input (see [controls.md](controls.md)). `Car.reset_to()` does not trust a bare
 `global_transform` write, which only sticks inside the physics step: it wakes the body and
 **queues** the pose, and `car.gd::_integrate_forces` applies it via `state.transform`, so a reset

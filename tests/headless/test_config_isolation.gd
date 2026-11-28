@@ -118,7 +118,7 @@ func test_restore_writes_in_place_and_shares_no_mutable_state() -> void:
 # against the frozen physics baseline instead of the shipped one.
 #
 # The convention: any file that installs a non-authored baseline (SceneTestHelpers
-# .use_test_config / .minimal_world) hands it back with Config.reset() in its teardown —
+# .use_test_config) hands it back with Config.reset() in its teardown —
 # sim_test.gd, test_drivetrain.gd, test_drive_mode.gd and test_car_terrain.gd all do.
 #
 # These two tests pin the CONTRACT that makes the convention work, with no authored value in

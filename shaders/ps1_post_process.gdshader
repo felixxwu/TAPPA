@@ -1,6 +1,6 @@
 shader_type canvas_item;
 
-// Applied to the PostProcess SubViewportContainer in main.tscn: TEXTURE is the
+// Applied to the PostProcess SubViewportContainer in level_view.tscn: TEXTURE is the
 // SubViewport's rendered 3D frame, so no hint_screen_texture is needed. The
 // screen-texture hint forced a full-screen backbuffer copy (render-pass break +
 // mid-frame command submit) every frame on the Compatibility backend; sampling
@@ -16,8 +16,8 @@ uniform vec2 virtual_resolution = vec2(320.0, 240.0);
 // All the maths here is sRGB-space (TEXTURE is the SubViewport's already-encoded
 // output, not linear) — that is intended for this era of look, so don't
 // "correct" it to linear. Defaults mirror scripts/game_config.gd and MUST stay
-// non-zero: mat_post in main.tscn only authors virtual_resolution, so any path
-// that doesn't run world.gd's _ready (the editor viewport) grades on these.
+// non-zero: the scene material only authors virtual_resolution, so any path
+// that doesn't push the grade (the editor viewport) grades on these.
 // Master strength. 0 = exact passthrough (vignette included), 1 = full grade.
 uniform float grade_amount : hint_range(0.0, 1.0) = 0.7;
 // 1 = untouched, 0 = greyscale.

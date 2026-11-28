@@ -19,10 +19,10 @@ const HEARTWOOD := Color(0.78, 0.50, 0.30)
 
 
 # Returns a mesh instance whose origin sits on the ground at the pile's centre, logs along Z.
-static func build(seed: int, style: int, rows: int = 6, base_count: int = 9,
+static func build(pile_seed: int, style: int, rows: int = 6, base_count: int = 9,
 		length_m: float = 4.0, radius_m: float = 0.16, sections: int = 1) -> MeshInstance3D:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = seed
+	rng.seed = pile_seed
 	var logs: Array[Dictionary] = []
 	match style:
 		Style.LOOSE:

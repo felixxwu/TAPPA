@@ -58,7 +58,7 @@ static var dev_tools_override := -1
 
 # Is the developer-only Dev settings page reachable,
 # and — via this same switch, checked at every OTHER dev-affordance site in the
-# project (car.gd, hud.gd, world.gd, terrain_manager.gd, perf_log.gd) — every other dev key/overlay/log too. One
+# project (car.gd, hud.gd, perf_log.gd) — every other dev key/overlay/log too. One
 # switch, defaulting to true: dev features are exposed to every player, not just
 # debug builds, so the whole in-game toolkit (grip grid, force arrows,
 # perf overlay) is

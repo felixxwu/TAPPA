@@ -3,7 +3,7 @@
 The game has two camera modes, cycled with the **C / R keys** or the gamepad
 **Y / Triangle (North)** button (`cycle_camera` action) or picked directly on the **settings page** (title-screen Settings or the
 in-run pause menu — see [menus.md](menus.md)). A `CameraManager` node
-(`scripts/camera_manager.gd`, `class_name CameraManager`) in `main.tscn` owns the
+(`scripts/camera_manager.gd`, `class_name CameraManager`) in `level_view.tscn` owns the
 ordered cycle list `[CHASE, BONNET]` (the first entry is the default for a fresh profile (chase)) and makes exactly one camera `current` at a
 time. Appending another `Camera3D` + `Mode` entry to its `ORDER` list extends the
 cycle.
@@ -33,7 +33,7 @@ back to chase.
 ## Chase camera
 
 **Source:** `scripts/chase_camera.gd` (extends `Camera3D`). Node `ChaseCamera`
-in `main.tscn`, with `target` wired to the `Car`.
+in `level_view.tscn`, with `target` wired to the `Car`.
 
 A third-person follow camera that sits behind the car's **direction of
 travel**. What is smoothed is *where the camera orbits to* — the direction it
@@ -238,7 +238,7 @@ suspension), and the replay/cinematic cameras are deliberately steady.
 
 ## Bonnet camera
 
-**Source:** `BonnetCamera` `Camera3D` parented to the `Car` in `main.tscn`; no
+**Source:** `BonnetCamera` `Camera3D` parented to the `Car` in `level_view.tscn`; no
 per-frame script. Because it is a child of the car it is rigid to the car's
 heading — a classic hood-cam that turns with the car and looks straight forward
 (Godot cameras look down local `-Z`, which is the car's front).
@@ -255,10 +255,9 @@ an individual body can nudge its hood cam to the right spot. `car.gd`'s
 `bonnet_cam_offset()` returns the active car's value (zero for the untouched
 baseline), and `CameraManager.refresh_bonnet_offset()` sets the bonnet camera's
 origin to `bonnet_offset + bonnet_cam_offset`. Because the bonnet camera is a
-scene child of `$Car` (not re-parented at boot), `free_roam.gd` (and the dev stage's
-`world.gd`) calls `refresh_bonnet_offset()` right after fielding the car (`apply_car` /
+scene child of `$Car` (not re-parented at boot), `level_view.gd` calls `refresh_bonnet_offset()` right after fielding the car (`apply_car` /
 `apply_owned`) — otherwise the per-car offset would only take effect on a later
-car swap. `retarget()` (car swap) re-parents the camera and then calls
+car swap. `CameraManager._ready()` calls it too, since on a level that loads instantly the car is fielded before the manager is ready. `retarget()` (car swap) re-parents the camera and then calls
 `refresh_bonnet_offset()` itself.
 
 To set a car's offset by numbers, run `tools/bonnet_clearance.gd`
@@ -276,7 +275,7 @@ camera's `target`.
 
 **Source:** `scripts/photo_mode.gd` (`class_name PhotoModeCamera`, extends `Camera3D`).
 Not part of the `CameraManager` cycle — it's a **standalone free-fly camera created on
-demand** by `PhotoModeHost` (`scripts/photo_mode_host.gd`, attached by `free_roam.gd`, `world.gd` and `level_view.gd` — every scene with a `PauseMenu` needs one, and `PauseMenu._on_photo_mode_pressed` stays put if nobody is listening; the host emits `opened(camera)` / `closed` so a world that streams round a viewpoint can follow the photo camera — the level does, see level-editor.md) when the player picks "Photo Mode" from the in-run pause menu (see
+demand** by `PhotoModeHost` (`scripts/photo_mode_host.gd`, attached by `level_view.gd` — every scene with a `PauseMenu` needs one, and `PauseMenu._on_photo_mode_pressed` stays put if nobody is listening; the host emits `opened(camera)` / `closed` so a world that streams round a viewpoint can follow the photo camera — the level does, see level-editor.md) when the player picks "Photo Mode" from the in-run pause menu (see
 [menus.md](menus.md) → "Pause menu"). The whole world stays **frozen** (`get_tree().paused`
 remains `true`); only the camera moves, seating itself on the transform and FOV of the
 gameplay camera that was active when the player paused, so the shot doesn't jump.

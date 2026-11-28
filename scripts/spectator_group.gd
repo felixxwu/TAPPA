@@ -61,7 +61,7 @@ static var _EMPTY_POINTS := PackedVector2Array()
 static var _EMPTY_INDICES := PackedInt32Array()
 
 var _car: Node                    # VehicleBody3D-ish: global_transform (+ linear_velocity)
-var _terrain: Node                # TerrainManager (height_at) or null on flat fixtures
+var _terrain: Node                # the level (height_at) or null on flat fixtures
 var _terrain_has_height := false  # cached in setup(); _ground() runs per agent per frame
 var _road_cells: Dictionary       # Vector2i -> true, the visible carriageway
 var _tree_grid: Dictionary        # Vector2i -> PackedVector2Array (built by SpectatorScatter)
@@ -600,7 +600,7 @@ func _ground(x: float, z: float) -> float:
 
 
 # Flip member i from an upright agent to a launched ragdoll body.
-# Shader warm-up (auto-invoked by world.gd's warm_up() contract walk while the
+# Shader warm-up (auto-invoked by the host's warm_up() contract walk while the
 # loading cover is up). A knocked spectator draws the crowd mesh as a SINGLE
 # MeshInstance3D (_knock_over below), which under gl_compatibility is a different
 # shader program than the upright crowd's MultiMesh — so without priming it here the

@@ -1,9 +1,9 @@
 extends GutTest
-# world.gd's frame-cap lifecycle (todo/mobile-web-performance.md §1.1). Generation
+# LevelView's frame-cap lifecycle (todo/mobile-web-performance.md §1.1). Loading
 # yields hundreds of frames, and a low cap paces every one of them, so _ready applies a
 # transient LOADING cap first and the real cap only once generation is done.
 #
-# These tests assert the INTENT recorded in world.gd's `applied_fps_caps`, never a
+# These tests assert the INTENT recorded in LevelView's `applied_fps_caps`, never a
 # literal cap value: every cap here (the loading const, the resolver's answer) is a
 # tunable, and the point is that a cap is applied at all and that the FINAL one is
 # whatever the resolver chose for that mode — not what number that happens to be.
@@ -14,11 +14,9 @@ var _scene: Node3D
 
 
 func _boot() -> Array:
-	SceneTestHelpers.minimal_world()
-	_scene = load("res://main.tscn").instantiate()
-	add_child(_scene)
-	await get_tree().physics_frame  # let _ready() run
-	return _scene.applied_fps_caps
+	Config.reset()
+	_scene = await SceneTestHelpers.add_level_world(self)
+	return (_scene.get_node("Level") as LevelView).applied_fps_caps
 
 
 func after_each() -> void:
@@ -26,6 +24,7 @@ func after_each() -> void:
 		_scene.free()
 		_scene = null
 	Benchmark.active = false
+	SceneTestHelpers.remove_level_world()
 	Config.reset()
 
 
@@ -46,7 +45,7 @@ func test_post_load_cap_is_the_resolver_s_choice() -> void:
 func test_benchmark_never_sees_a_transient_loading_cap() -> void:
 	# benchmark_mode.gd snapshots Engine.max_fps to restore on exit, so a transient
 	# loading cap must never be applied on that path — it could be what gets captured.
-	# Every cap world.gd applies during a benchmark is the benchmark's own resolved cap.
+	# Every cap LevelView applies during a benchmark is the benchmark's own resolved cap.
 	Benchmark.active = true
 	var caps: Array = await _boot()
 	for cap in caps:

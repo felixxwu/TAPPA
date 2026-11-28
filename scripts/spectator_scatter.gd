@@ -1,7 +1,6 @@
 class_name SpectatorScatter
 # Pure, seeded placement of roadside spectator groups in the world-XZ plane
-# (x -> world x, y -> world z), in the same headless/deterministic spirit as
-# TreeScatter. Nothing here touches the scene — it reads only in-memory track
+# (x -> world x, y -> world z), headless and deterministic. Nothing here touches the scene — it reads only in-memory track
 # data (the road_cells set and a grid of tree points), so it unit-tests cheaply.
 #
 # Two concerns:
@@ -29,7 +28,7 @@ static func mid_offset(baked_length: float, frac_min: float, frac_max: float, se
 
 # Build a uniform spatial grid of points (e.g. tree positions) keyed by cell, so
 # proximity tests only check a 3x3 neighbourhood instead of every point. Thin wrapper
-# over SpatialGrid.of_points (kept as the public API world.gd + SpectatorGroup consume).
+# over SpatialGrid.of_points (kept as the public API SpectatorGroup consumes).
 static func build_point_grid(points: PackedVector2Array, cell: float) -> Dictionary:
 	return SpatialGrid.of_points(points, cell)
 

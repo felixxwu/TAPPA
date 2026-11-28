@@ -6,7 +6,7 @@ finishes. Start here before optimising load time.
 Related: `terrain.md` (chunk cache, carve), `track.md` (the DFS search),
 `rendering.md` (shader pre-warm), `testing.md` (why tests avoid full generation).
 
-**Tests:** `tests/headless/test_loading_screen.gd`, `tests/headless/test_loading_tips.gd`, `tests/headless/test_stage_manager.gd`
+**Tests:** `tests/headless/test_loading_screen.gd`, `tests/headless/test_loading_tips.gd`
 
 ## The pipeline
 
@@ -136,10 +136,7 @@ into `_saved_max_fps` and a transient value must never land there.
 > which yields every 2 search steps. Any per-stage timing captured under a cap is
 > distorted unevenly, not uniformly. See `todo/mobile-web-performance.md` item 1.1.
 
-## Stage harness vs free roam
-
-The stage harness (`main.tscn` / `world.gd`, dev + physics tests only) runs the DFS and
-every stage above live on each load; nothing is cached on disk.
+## Loading the level
 
 The Hafren level has no track and no DFS: it streams its tiles through `LevelStreamer`
 ([level-streamer.md](level-streamer.md)). Always say which kind of load you measured.
@@ -153,8 +150,6 @@ immediately after `_end_load_timing()`. Subscribers free load-only data.
 > `_headless or _stage_label == ""` — a hook placed there would never fire for the test
 > runner. `_on_load_finished()` is unconditional and latches on `_load_finished`, so a
 > later regeneration cannot double-free.
-
-Covered by `tests/headless/test_load_finished.gd`.
 
 ### Subscribers
 
@@ -181,6 +176,5 @@ keeps — and what is freed*). It duck-types onto the parent's signal rather tha
 
 ## Cost model, in one line
 
-Full generation is ~15 s under headless, dominated by the DFS search and the two foliage
-scatters — which is why tests use `SceneTestHelpers.minimal_world()` (1-turn track, no
-foliage, <1 s) unless they genuinely assert on the track or terrain. See `testing.md`.
+Tests never load the real level: they use `SceneTestHelpers.add_level_world()`, a tiny flat
+level that loads in well under a second. See `testing.md`.

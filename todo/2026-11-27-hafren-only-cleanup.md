@@ -43,7 +43,7 @@ spec items still applies.
 - [x] 3 Make `LevelStreamer` stand alone (2026-11-27)
 - [x] 4 Delete the island (2026-11-27)
 - [x] 4b Remove outlines (2026-11-28)
-- [ ] 5 Retire the stage harness
+- [x] 5 Retire the stage harness (2026-11-28)
 - [ ] 6 Docs and the final sweep, full test suite green
 
 ## Key structural facts (verified 2026-11-23)
