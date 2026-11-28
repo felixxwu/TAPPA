@@ -83,12 +83,14 @@ void world_free(TappaWorld *w) { delete w; }
 void world_step(TappaWorld *w, float dt) { w->system.Update(dt, 1, &w->temp, &w->jobs); }
 
 TappaShape *shape_box(const float h[3]) {
+	init_jolt();
 	const Shape *s = new BoxShape(Vec3(h[0], h[1], h[2]));
 	s->AddRef();
 	return (TappaShape *)s;
 }
 
 TappaShape *shape_heightfield(const float *samples, uint32_t n, const float scale[3], const float offset[3]) {
+	init_jolt();
 	HeightFieldShapeSettings settings(samples, Vec3(offset[0], offset[1], offset[2]), Vec3(scale[0], scale[1], scale[2]), n);
 	ShapeSettings::ShapeResult r = settings.Create();
 	if (r.HasError()) {
