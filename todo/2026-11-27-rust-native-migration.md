@@ -34,11 +34,11 @@ spec items still applies.
 
 **Phase 1 — Yardsticks**
 - [x] 1.1 Deterministic replays (2026-11-28) (whole drive matches on Mac and CI; break test caught a wall-clock read in the weather clock at tick 1 and threaded crowd placement at tick 31; audit recorded in `todo/2026-11-28-parity-checklist.md`; see `todo/2026-11-28-phase-1-1-determinism-plan.md`)
-- [ ] 1.2 Car step golden (in progress: snapshot, input recording, free replay and `--car-golden` built 2026-11-28, two runs match and a 1% air-density change is caught; left: the hand-recorded drive `benchmark/runs/hafren_free.rec` (needs the user; a scripted stand-in runs until then) and blessing on CI)
+- [ ] 1.2 Car step golden (in progress: snapshot, input recording, free replay and `--car-golden` built 2026-11-28, two runs match and a 1% air-density change is caught; blessed on CI with a scripted stand-in drive; left: the hand-recorded drive `benchmark/runs/hafren_free.rec` (needs the user), then re-bless)
 - [ ] 1.3 Car drift report (in progress: `tools/drift_report.py` built 2026-11-28; left: the user reviews its tolerances against the hand drive)
-- [ ] 1.4 Game-state trace (in progress: event log + scripted actions built 2026-11-28, two full runs match; left: blessing on CI)
-- [ ] 1.5 Menu-flow, layout and touch replays (in progress: key/pad menu flow and touch/tilt flow built 2026-11-28; the flow found and we fixed 4 menu nav bugs; left: blessing on CI)
-- [ ] 1.6 Scene counts (in progress: built 2026-11-28, two runs match; left: blessing on CI)
+- [x] 1.4 Game-state trace (2026-11-28) (blessed on CI; a CI-only flake from the map painter thread was fixed first)
+- [x] 1.5 Menu-flow, layout and touch replays (2026-11-28) (blessed on CI; the flow found and we fixed 4 menu nav bugs)
+- [x] 1.6 Scene counts (2026-11-28) (blessed on CI)
 - [x] 1.7 Save round-trip (2026-11-28)
 - [ ] 1.8 Device targets (in progress: `tools/device_targets.py` built 2026-11-28; left: real device runs, needs the user)
 - [ ] 1.9 Re-bless rule for Godot changes during Phases 1–3 (in progress: `bless.sh`, CI bless input and `bless-guard` job built 2026-11-28; left: the CLAUDE.md rule, waiting on the user)
