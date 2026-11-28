@@ -46,9 +46,9 @@ spec items still applies.
 - [ ] **Exit:** every golden in CI and blessed; numbers recorded for every device class
 
 **Phase 2 — Neutral data format**
-- [ ] 2.1 Level bake in a neutral binary
-- [ ] 2.2 Publish and fetch it like the current bake
-- [ ] 2.3 Every other imported asset, plus the built level geometry
+- [x] 2.1 Level bake in a neutral binary (2026-11-28) (Rust and Godot manifests match on CI)
+- [ ] 2.2 Publish and fetch it like the current bake (in progress: key, `publish_bake.sh` and `fetch_neutral_bake.sh` built 2026-11-28; left: the user runs `tools/publish_bake.sh` once to publish the first `.bake.bin`)
+- [x] 2.3 Every other imported asset, plus the built level geometry (2026-11-28) (10,734 manifest lines match between Godot and Rust on CI; see `features/neutral-format.md`)
 - [ ] **Exit:** Rust loads every asset; checksums and decoded data match Godot
 
 **Phase 3 — Renderer, build spike, go/no-go**
