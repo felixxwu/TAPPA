@@ -33,7 +33,7 @@ spec items still applies.
 - [ ] **Exit:** live on the App Store and Cloudflare Pages; sign-in and deletion work everywhere
 
 **Phase 1 — Yardsticks**
-- [ ] 1.1 Deterministic replays (in progress: per-frame state onto the tick, docs, CI job's first green run; see `todo/2026-11-28-phase-1-1-determinism-plan.md`)
+- [ ] 1.1 Deterministic replays (in progress: whole drive matches on Mac and CI since 2026-11-28; break test passed 2026-11-28 (a wall-clock read in the weather clock was caught at tick 1, threaded crowd placement at tick 31); left: recording the audit in the parity checklist (1.10); see `todo/2026-11-28-phase-1-1-determinism-plan.md`)
 - [ ] 1.2 Car step golden
 - [ ] 1.3 Car drift report
 - [ ] 1.4 Game-state trace
@@ -745,7 +745,7 @@ deleting the account work on every platform. The native iPhone frame-time number
    - Status: the plan is `todo/2026-11-28-phase-1-1-determinism-plan.md`. Its "Chosen defaults" for
      the open questions were picked while the user was away and are awaiting the user's review.
    - CI: the `replay-determinism` job in `.github/workflows/test.yml` runs
-     `./run_level_replay.sh --golden-check --full` (in progress: added 2026-11-28, not yet green on CI).
+     `./run_level_replay.sh --golden-check --full` (2026-11-28, green on CI).
    - (2026-11-28: `RngStreams`, `scripts/rng_streams.gd`) Give every system its own seeded random number stream instead of the global `randf` / `randi`.
      The global calls are in `damage_model.gd` (`nudge_wheels`),
      `level_weather.gd` (`seed_value = randi()`), `dust_puffs.gd`, `wheel_particles.gd`,
@@ -764,7 +764,7 @@ deleting the account work on every platform. The native iPhone frame-time number
        `randf_range`, `randi_range`, `randfn` or `randomize`, `Array.shuffle()` or `pick_random()`
        (which use the global generator), or creates a `RandomNumberGenerator` it never
        seeds, so new code can't bring them back.
-   - (in progress: weather clock, deliveries, spectator refresh, map reveal and timers being moved)
+   - (2026-11-28: weather clock, deliveries and cargo mass, spectator refresh, map reveal and timers)
      Move game-state logic that runs per rendered frame onto the physics tick. Examples: the weather
      clock (`level_weather.gd` advances `drive_time` in `_process`), deliveries (`level_view.gd` →
      `_check_delivery` in `_timed_process`).
