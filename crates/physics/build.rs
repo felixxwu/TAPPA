@@ -44,7 +44,8 @@ fn main() {
             .flag("-matomics")
             .flag("-mbulk-memory")
             .flag("-mmutable-globals")
-            .flag("-pthread");
+            .flag("-pthread")
+            .define("JPH_PLATFORM_WASM", None);
         // Archives only contribute members that are referenced, so unused wasi imports stay out of the module.
         println!("cargo:rustc-link-search=native={}", root.join(format!("lib/{triple}")).display());
         for l in ["c++", "c++abi", "c"] {
