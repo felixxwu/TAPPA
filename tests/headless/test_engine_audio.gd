@@ -852,11 +852,6 @@ func test_attenuation_clamped_at_floor() -> void:
 	assert_eq(v, -60.0, "clamped to the floor")
 
 
-# The start-line reveal radius (engine_audio_ref_distance_reveal_m, and the
-# StartLine REVEAL-queue attenuation swap that read it) was deleted along with the
-# rival reveal (todo/roguelike-pivot.md decision 5).
-
-
 # --- Mix-rate resolution + inaudible skip (todo/mobile-web-performance.md 2.1) ---
 
 const EngineAudioScript := preload("res://scripts/engine_audio.gd")

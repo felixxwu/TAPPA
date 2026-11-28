@@ -132,7 +132,7 @@ func _place_job(job: Dictionary) -> void:
 		for q in _buildings.footprint_points:
 			if q.distance_to(centre) <= reach + p["tree_avoid_m"]:
 				obstacles.append(q)
-	var grid := SpectatorScatter.build_point_grid(obstacles, p["tree_cell_m"])
+	var grid := SpatialGrid.of_points(obstacles, p["tree_cell_m"])
 	var seed_value := int(ScatterMath.hash01(i, 0, 0, 71) * 1_000_000.0)
 	var members := place(centre, r, int(g.n), cfg.spectator_separation_m, road, grid, p["tree_cell_m"], p["tree_avoid_m"], seed_value)
 	job["members"] = members

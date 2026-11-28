@@ -50,12 +50,6 @@ func test_engine_reset_restores_the_real_catalogue() -> void:
 	assert_eq(EngineLibrary.index_of("seam_e"), -1, "override id no longer resolves after reset")
 
 
-# NOTE: three tests covering the UpgradeLibrary registry override lived here. The upgrade
-# CATALOGUE is deleted with the persistent parts model (todo/roguelike-pivot.md), so there
-# is no upgrade table left to override. The seam itself is unchanged and still covered by
-# the car / engine / rally / region cases in this file.
-
-
 func _fake_regions() -> Array[Dictionary]:
 	return [
 		{"id": "seam_g", "name": "Seam Region", "spawn_bush_mesh": true},

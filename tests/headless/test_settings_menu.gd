@@ -1,10 +1,6 @@
 extends GutTest
 # SettingsMenu (features/menus.md): the shared settings panel, exercised through the
-# pause-menu / title-screen hosts. Runs against a throwaway Save profile.
-#
-# The dev "Complete rally" shortcut this file used to cover was RallySession-gated
-# (win the active rally on the spot: 0 ms every event -> P1 -> podium). Deleted along
-# with RallySession and the rival field it served (todo/roguelike-pivot.md decision 5).
+# pause-menu host. Runs against a throwaway Save profile.
 
 const TEST_PATH := "user://test_settings_menu_profile.json"
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
@@ -146,11 +142,6 @@ func test_gearbox_is_always_automatic_and_not_in_the_menu() -> void:
 	var menu := _make_menu()
 	assert_false(_list_has_button(menu, "gearbox"),
 		"the category list has no Gearbox row")
-
-
-# test_add_star_dev_button_credits_one_star DELETED: the "Add 1 star" dev shortcut and
-# Save.stars_available/award_stars are gone with the star ledger
-# (todo/roguelike-pivot.md decision 21).
 
 
 # --- Dev page ----------------------------------------------------------------

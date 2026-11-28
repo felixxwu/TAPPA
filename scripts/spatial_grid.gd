@@ -1,10 +1,10 @@
 class_name SpatialGrid
 # Docs: features/spectators.md — update in the same change as this file.
-# Tests: tests/headless/test_smoke.gd, tests/headless/test_spectator_damage.gd, tests/headless/test_spectator_scatter.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'SpatialGrid' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
+# Tests: tests/headless/test_smoke.gd, tests/headless/test_spectator_damage.gd, tests/headless/test_scatter_helpers.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'SpatialGrid' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # A uniform 2D bin grid over the world-XZ plane (x -> world x, y -> world z): bin points
 # into square cells keyed by Vector2i, then answer proximity / neighbourhood queries by
 # touching only the 3x3 cells around a point instead of every point. Shared by the
-# scatter / field code (SpectatorScatter tree grid, BushField hit grid, SpectatorGroup obstacle avoidance).
+# scatter / field code (LevelSpectators obstacle grid, BushField hit grid, SpectatorGroup obstacle avoidance).
 #
 # Build with a cell size >= the largest query radius so the 3x3 neighbourhood is
 # guaranteed to cover the radius. `of_points` stores the points themselves (for

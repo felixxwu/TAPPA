@@ -3,7 +3,7 @@ extends GutTest
 # (features/snow-region.md). Drivetrain.deep_snow_force is the whole rule, pure and static,
 # so everything here runs without a physics scene, a car or a terrain.
 #
-# Nothing here pins snow_deep_drag: every coefficient is supplied by the test. What is
+# Nothing here pins deep_snow_drag: every coefficient is supplied by the test. What is
 # asserted is the SHAPE of the rule — feather, symmetry, magnitude conservation — which
 # must hold for any value a designer picks.
 
@@ -51,7 +51,7 @@ func test_a_stationary_car_is_not_pushed_by_the_snow() -> void:
 
 
 # The reason the coefficient is divided by the WHEEL COUNT: with the car evenly buried the
-# total must equal the single central force this replaced, so snow_deep_drag keeps its
+# total must equal the single central force this replaced, so deep_snow_drag keeps its
 # existing meaning and the change is purely about asymmetry.
 func test_four_evenly_buried_wheels_sum_to_the_old_central_force() -> void:
 	var total := Vector3.ZERO

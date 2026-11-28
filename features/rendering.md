@@ -82,6 +82,23 @@ controls are laid out in logical units, so they draw smaller as the height
 rises — an accepted trade. A degenerate window falls back to the authored
 `DESIGN_HEIGHT`.
 
+### Safe area (notch, rounded corners, home indicator)
+
+On mobile, `DisplayStretch` also reads `DisplayServer.get_display_safe_area()` on every
+resize (`_update_safe_area`), converts it to logical pixels (`safe_insets`) and keeps it
+in the static `inset_start` / `inset_end`. The 3D world still fills the whole screen;
+only the UI moves in. It does that once for every screen: each Control that is a direct
+child of a CanvasLayer has its offsets shifted (`fit_offsets`) so its anchors resolve
+against the safe area instead of the full frame — a full-rect menu shrinks to the safe
+area, a bottom-right label moves up and left. `ColorRect`s are skipped so full-screen
+dims and backdrops still cover the notch.
+
+Widgets that place themselves every frame by `position` (the HUD dial, the minimap, the
+cargo label) would undo that, so they add `DisplayStretch.safe_shift(anchor)` — the same
+shift for the corner they hug — to the position they compute. The touch controls
+(`mobile_controls.gd`, `photo_mode_controls.gd`) are left alone: their hit areas are
+meant to run to the screen edges. Off mobile (desktop, web, tests) none of this runs.
+
 ## Shaders (`shaders/`)
 
 ### `level_ground.gdshader` — the level's ground
@@ -473,15 +490,11 @@ by `test_render_smoke.gd::test_sandstorm_field_is_a_single_cheap_draw_with_wind_
 "look is made of fog" mechanism: it is *only* a look block. `mist_fog_density_mult`
 (the dominant knob — the whole effect) × the config `fog_density`, a high
 `mist_fog_sky_affect` so the panorama washes out as rain's does, and a **pale,
-luminous** grey (`mist_background_color` / `mist_sky_color`). Two deliberate
+luminous** grey (`mist_background_color`). Two deliberate
 authoring choices, easy to get wrong: the colour must be *bright* — mist glows, and
 making it dark reads as dusk rather than fog — and `mist_sun_energy_mult` stays near
 1.0, because the diffuse glare of an un-dimmed sun through thick haze is what sells
-it. Fog names no `particles`, no `grip_mult` and no `road_tint` (a foggy road is
-dry), so it constructs no node at all.
-
-**Lightning:** the storm entry still authors a `lightning` block, but nothing on the level
-reads it — the flash belonged to the deleted stage.
+it. Fog names no `particles` and no `grip_mult`, so it constructs no node at all.
 
 ### The fake headlight cone (`shaders/headlight_cone.gdshaderinc`)
 

@@ -155,6 +155,17 @@ func test_not_applicable_headless() -> void:
 		"the update check is inert in headless / unstamped builds")
 
 
+func test_a_stamped_native_build_checks() -> void:
+	assert_true(UpdateCheck.applicable_on(false, false, false, 61),
+		"a stamped itch / Play build checks for updates")
+
+
+func test_never_applicable_on_ios() -> void:
+	# App Review rejects an app that sends players to a download outside the App Store.
+	assert_false(UpdateCheck.applicable_on(false, false, true, 61),
+		"an iOS build never checks, even when stamped")
+
+
 # --- Where the prompt sends the player ----------------------------------------
 
 func test_a_play_build_is_sent_to_play() -> void:

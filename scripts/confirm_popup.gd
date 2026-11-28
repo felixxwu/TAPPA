@@ -23,7 +23,7 @@ signal finished()
 # one true answer and it belongs to the scene tree, not to any one host — a helper
 # that centralises WHAT a modal does while leaving each caller to track WHETHER one
 # is up has only half-consolidated the rule. See features/menus.md → "One modal at
-# a time" and todo/challenge-career-reuse-drift.md item 10.
+# a time".
 const MODAL_GROUP := "modal"
 
 var _actions: Array = []

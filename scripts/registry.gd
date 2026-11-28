@@ -1,13 +1,13 @@
 class_name Registry
 extends RefCounted
-# Shared lookup + test-override mechanism for the four authored content libraries
-# (CarLibrary / EngineLibrary / RallyLibrary / UpgradeLibrary). Each of those
+# Shared lookup + test-override mechanism for the authored content libraries
+# (CarLibrary / EngineLibrary / RegionLibrary / WeatherLibrary / LoadingTips). Each of those
 # libraries is a flat Array of entry Dictionaries keyed by a stable string "id";
 # ownership/progress is persisted by that id (never array index), so a lookup must
 # resolve a stored id back to the current array position / entry.
 #
-# Before this helper, index_of/by_id were reimplemented byte-identically in all
-# four libraries, and the test seam (an override table swapped in by tests, so a
+# Before this helper, index_of/by_id were reimplemented byte-identically in every
+# library, and the test seam (an override table swapped in by tests, so a
 # logic/physics test can run against a synthetic roster) was duplicated on some and
 # missing on others. This centralises both:
 #   * index_of(entries, id) / by_id(entries, id) — the pure stable-id lookups.
@@ -42,8 +42,7 @@ class Seam extends RefCounted:
 	# Bumped on every roster swap. Consumers that derive an expensive structure from
 	# all() (Voronoi sites, pin layouts) memoise against this instead of hashing the
 	# roster: hashing is O(entries) and allocates, so a consumer that checked its memo
-	# by re-hashing paid the full cost on every call and the memo bought nothing — the
-	# exact defect this replaced on OverworldRegion's per-wheel contact path. Monotonic
+	# by re-hashing paid the full cost on every call and the memo bought nothing. Monotonic
 	# rather than a dirty flag, so several independent consumers can each compare
 	# against their own last-seen value without coordinating a clear.
 	var version: int = 0

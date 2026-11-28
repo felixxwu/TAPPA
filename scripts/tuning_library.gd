@@ -20,7 +20,7 @@ extends RefCounted
 # can never zero or invert a value. Pure static; mutates only the passed-in cfg.
 
 # The three handling axes the tuning lift exposes. ALL THREE ARE UNGATED on every car
-# (todo/roguelike-pivot.md decision 24) — aero_balance used to need the aero part fitted,
+# — aero_balance used to need the aero part fitted,
 # and that gate went with the parts model, taking `axis_unlocked` with it.
 # engine_detune is NOT here — it's a power (p/w) knob with its own slider wherever the UI
 # puts one; apply() still reads the stored tuning.engine_detune below.
@@ -61,4 +61,3 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 	# LAST so it scales whatever torque the swapped engine + active effects produced.
 	# Default 1.0 (full power); always available.
 	cfg.peak_torque *= clampf(float(tuning.get("engine_detune", 1.0)), 0.0, 1.0)
-

@@ -127,7 +127,7 @@ git history has them. The island's parts shop survives as the level's part pages
 | Character dialogue | `scripts/npc_dialogue.gd` (`NpcDialogue`), `tools/render_npc.sh` (portraits) — see [npc-dialogue.md](npc-dialogue.md) |
 | Config | `scripts/game_config.gd`, `scripts/config.gd` |
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
-| Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the biome-ring order) |
+| Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides) |
 | Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the parts catalogue) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/tuning_panel.gd` (the slider UI, hosted by the rest stop page) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/car.gd` (`reskin_wheels`) — **no screen fits them today** |

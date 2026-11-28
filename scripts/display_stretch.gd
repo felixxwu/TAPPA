@@ -44,6 +44,11 @@ static func base_design_height() -> float:
 	return float(ProjectSettings.get_setting("display/window/size/viewport_height", 400))
 
 
+# The phone's notch / rounded corners / home-indicator insets, in logical pixels: how far
+# the safe area sits in from each edge of the frame. Zero off mobile.
+static var inset_start := Vector2.ZERO  # left, top
+static var inset_end := Vector2.ZERO  # right, bottom
+
 var _last_window_size := Vector2i.ZERO
 # Benchmark state as last applied (active, render_height): the replay flips
 # these without a window resize, so _process re-applies when they change — this
@@ -66,6 +71,8 @@ func _ready() -> void:
 	# given size_changed is missed (e.g. some embedded-window cases).
 	_apply()
 	_apply.call_deferred()
+	if OS.has_feature("mobile"):
+		get_tree().node_added.connect(_on_node_added)
 
 
 func _notification(what: int) -> void:
@@ -100,6 +107,63 @@ func _apply() -> void:
 		effective, Benchmark.active, Benchmark.render_height,
 		Config.data.render_height)
 	window.content_scale_size = logical_size(effective, Config.data.horizontal_stretch, height)
+	if OS.has_feature("mobile"):
+		_update_safe_area(size, window.content_scale_size)
+
+
+# Re-reads the OS safe area and moves every on-screen UI root into it when it changes
+# (it does on rotation, when the notch swaps sides).
+func _update_safe_area(window_size: Vector2i, logical: Vector2i) -> void:
+	var insets := safe_insets(window_size, DisplayServer.get_display_safe_area(), logical)
+	if insets[0] == inset_start and insets[1] == inset_end:
+		return
+	inset_start = insets[0]
+	inset_end = insets[1]
+	for layer in get_tree().root.find_children("*", "CanvasLayer", true, false):
+		for child in layer.get_children():
+			_fit_to_safe_area(child)
+
+
+func _on_node_added(node: Node) -> void:
+	if node is Control and node.get_parent() is CanvasLayer:
+		# Deferred so a screen that sets its anchors in _ready, after entering the tree, is
+		# moved from where it finally put itself.
+		_fit_to_safe_area.call_deferred(node)
+
+
+func _fit_to_safe_area(node: Node) -> void:
+	if not is_instance_valid(node) or not node is Control or node is ColorRect:
+		return  # full-screen backdrops (ColorRects) should still cover the notch
+	var applied: Array = node.get_meta(&"safe_insets", [Vector2.ZERO, Vector2.ZERO])
+	fit_offsets(node as Control, inset_start - applied[0], inset_end - applied[1])
+	node.set_meta(&"safe_insets", [inset_start, inset_end])
+
+
+# The safe-area insets [start (left, top), end (right, bottom)] in logical pixels, from the
+# window size and the OS safe area in window pixels. Pure + static for testing.
+static func safe_insets(window_size: Vector2i, safe_px: Rect2i, logical: Vector2i) -> Array[Vector2]:
+	if window_size.x <= 0 or window_size.y <= 0 or safe_px.size.x <= 0 or safe_px.size.y <= 0:
+		return [Vector2.ZERO, Vector2.ZERO]
+	var to_logical := Vector2(logical) / Vector2(window_size)
+	var start := Vector2(safe_px.position).max(Vector2.ZERO)
+	var end := (Vector2(window_size) - Vector2(safe_px.end)).max(Vector2.ZERO)
+	return [(start * to_logical).round(), (end * to_logical).round()]
+
+
+# How far a point anchored at `anchor` (0..1 per axis, as Control anchors) moves to land at
+# the same anchor inside the safe area. Self-placing widgets (the HUD dial, the minimap)
+# add this to the position they compute against the full frame.
+static func safe_shift(anchor: Vector2, start := inset_start, end := inset_end) -> Vector2:
+	return Vector2(lerpf(start.x, -end.x, anchor.x), lerpf(start.y, -end.y, anchor.y))
+
+
+# Moves a control's edges so its anchors resolve against the safe area instead of the full
+# frame, by adding the given (change in) insets to its offsets.
+static func fit_offsets(c: Control, start: Vector2, end: Vector2) -> void:
+	c.offset_left += safe_shift(Vector2(c.anchor_left, 0.0), start, end).x
+	c.offset_right += safe_shift(Vector2(c.anchor_right, 0.0), start, end).x
+	c.offset_top += safe_shift(Vector2(0.0, c.anchor_top), start, end).y
+	c.offset_bottom += safe_shift(Vector2(0.0, c.anchor_bottom), start, end).y
 
 
 # The window size to lay the frame out against. Normally the real window; during

@@ -55,7 +55,7 @@ func test_wire_column_links_neighbours_top_to_bottom() -> void:
 	# Up/down must LEAVE a text field (left/right belong to the caret), so the
 	# vertical neighbours are wired explicitly rather than left to Godot's search.
 	var first := TextField.new("Email")
-	var second := TextField.new("Password", "", true)
+	var second := TextField.new("Code")
 	var submit := Button.new()
 	submit.focus_mode = Control.FOCUS_ALL
 	_root.add_child(first)
@@ -110,20 +110,12 @@ func test_the_ends_of_a_column_do_not_wrap() -> void:
 	# Wrapping would make "down" at the bottom jump back to the top, which reads
 	# as the cursor teleporting.
 	var first := TextField.new("Email")
-	var second := TextField.new("Password", "", true)
+	var second := TextField.new("Code")
 	_root.add_child(first)
 	_root.add_child(second)
 	TextField.wire_column([first, second])
 	assert_eq(first.line.get_node(first.line.focus_neighbor_top), first.line)
 	assert_eq(second.line.get_node(second.line.focus_neighbor_bottom), second.line)
-
-
-func test_a_password_field_is_masked() -> void:
-	var field := TextField.new("Password", "", true)
-	_root.add_child(field)
-	assert_true(field.line.secret)
-	field.set_secret(false)
-	assert_false(field.line.secret, "the show/hide toggle must actually unmask")
 
 
 func test_text_is_trimmed() -> void:

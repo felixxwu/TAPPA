@@ -59,10 +59,8 @@ func test_grip_balance_needs_no_upgrade() -> void:
 	assert_gt(cfg.wheel_friction_slip_front, 0.8, "grip balance applies with no upgrades")
 
 
-# CHANGED DELIBERATELY: aero_balance used to be GATED on owning the aero kit. Tuning is
-# ungated in the pivot (todo/roguelike-pivot.md decision 24) and the kit that gated it went
-# with the parts model, so the axis now applies on any car. What is still worth pinning is
-# the SHIFT ITSELF -- +1 moves downforce rearward -- not who is allowed to ask for it.
+# aero_balance applies on any car. What is worth pinning is the SHIFT ITSELF -- +1 moves
+# downforce rearward -- not who is allowed to ask for it.
 func test_aero_balance_shifts_downforce_rearward_on_any_car() -> void:
 	var cfg := _cfg()
 	TuningLibrary.apply({"tuning": {"aero_balance": 1.0}}, cfg)
@@ -116,12 +114,6 @@ func test_out_of_range_sliders_clamp() -> void:
 	assert_gt(cfg.wheel_friction_slip_front, 0.0, "grip never zeroes")
 	assert_gt(cfg.brake_bias, 0.0, "brake bias never inverts")
 	assert_lt(cfg.brake_bias, 1.0, "brake bias never saturates past the split")
-
-
-# NOTE: the aero_balance tuning GATE and its test are deleted. Tuning is ungated in the
-# pivot (todo/roguelike-pivot.md decision 24) and the aero kit that gated it went with the
-# parts model, so TuningLibrary.axis_unlocked has nothing left to answer. The slider
-# CLAMPING and application logic below is unaffected and still covered.
 
 
 func test_engine_detune_scales_torque() -> void:

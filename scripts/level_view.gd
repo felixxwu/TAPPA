@@ -1725,7 +1725,7 @@ func _timed_process(_dt: float) -> void:
 			for b in controls.button_rects():
 				if b.intersects(r.grow(UITheme.FONT_SIZE)):
 					r.position.y = minf(r.position.y, b.position.y - UITheme.FONT_SIZE - r.size.y)
-		cargo_label.position = r.position.round()
+		cargo_label.position = (r.position + DisplayStretch.safe_shift(Vector2(0.5, 1.0))).round()
 	if _recovery != null:
 		off_road_label.text = off_road_text(_recovery.off_road_seconds())
 		off_road_label.visible = not off_road_label.text.is_empty()

@@ -276,8 +276,7 @@ func test_credentials_are_not_stored_in_the_uploaded_profile() -> void:
 # A cloud call started while the tree is PAUSED must still complete. HTTPRequest
 # drives its transfer from an internal process callback, so a pausable RestClient
 # silently stalls mid-request and the awaiting caller hangs forever — which is how
-# "Wipe all progress" from the pause menu (the Overworld HQ, or a mid-rally pause)
-# left CloudBusy's full-screen cover up for good. Asserted via can_process(), the
+# "Wipe all progress" from the pause menu left CloudBusy's full-screen cover up for good. Asserted via can_process(), the
 # engine's own answer to "would this node tick right now".
 func test_rest_client_keeps_running_while_the_tree_is_paused() -> void:
 	var rest := RestClient.new()

@@ -357,7 +357,8 @@ func _timed_process(_delta: float) -> void:
 	_dial.nitrous_on = engine.nitrous_delivering
 	var screen := get_viewport().get_visible_rect().size
 	var controls := get_parent().get_node_or_null("MobileControls") as MobileControls
-	_dial.position = HudDial.home_rect(screen).position + Vector2(0.0, MobileControls.bottom_band_lift(controls, screen))
+	_dial.position = HudDial.home_rect(screen).position + Vector2(0.0, MobileControls.bottom_band_lift(controls, screen)) \
+		+ DisplayStretch.safe_shift(Vector2.ONE)
 	var track_seed: int = Config.data.track_seed
 	if track_seed != _last_seed:
 		_last_seed = track_seed

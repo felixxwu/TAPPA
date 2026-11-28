@@ -5,18 +5,16 @@
 **Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_assets.gd`,
 `tests/headless/test_region_docs.gd` (every region id below must appear in this file).
 
-A region is an authored **look** (sky, ground textures, tree species, particle colours) plus,
-for `snow`, a block of **handling** overrides. Regions came from the procedural island's biome
+A region is an authored **look** (sky, ground textures, tree species, particle colours).
+Regions came from the procedural island's biome
 rings, which were deleted in the Hafren-only cleanup of November 2026 (in git history). The
 Hafren level is one authored place, so today almost all of the table is unread: see
 "What the live game reads" below before building on any of it. The level's snow is its own
 biome map, not this table ([snow-region.md](snow-region.md)).
 
-The game ships five, each with an `order` (`RegionLibrary.ordered()` sorts by it): `home`
-("The Green", the original green forest), `greece` ("The Dunes", arid: its own sky, grass,
-gravel and a Mediterranean tree), `taiga` ("The Taiga", home's look with a much taller spruce),
-`home_coast` ("The Lakes", home's look under another name) and `snow` ("The Alps": snow
-ground, sky and conifers, plus handling; see [snow-region.md](snow-region.md)).
+The game ships five: `home` (the original green forest), `greece` (arid: its own sky, grass,
+gravel and a Mediterranean tree), `taiga` (home's look with a much taller spruce),
+`home_coast` (home's look) and `snow` (snow ground, sky and conifers).
 
 ## What the live game reads
 
@@ -32,10 +30,8 @@ After boot, `LevelView._timed_physics_process` calls `DustPuffs.apply_region_loo
 physics tick with a synthetic `{"dust_color": ...}` look (`LevelView.snow_dust`, lightened by
 the snow under the car), not a region's.
 
-Snow handling on the level does not go through `RegionLibrary.surface_grip_of` /
-`deep_snow_of` either: `LevelView.set_snow` reads the same `snow_*` `GameConfig` fields that
-the `snow` region's `surface_grip` / `deep_snow` blocks name, directly, and blends them by
-`LevelStreamer.snow_at`.
+Snow handling does not read a region either: `LevelView.set_snow` reads the `snow_*`
+`GameConfig` fields directly and blends them by `LevelStreamer.snow_at`.
 
 Hafren's sky, fog and ground come from the level scene and the bake, its trees from
 `LevelTrees` (species set per level in the editor, see [level-editor.md](level-editor.md)),
@@ -47,9 +43,8 @@ An authored catalogue, `const REGIONS: Array[Dictionary]`, behind a `Registry.Se
 `CarLibrary`, so tests install a synthetic set with `override_for_test(regions)` and `reset()`
 after. Never pin the shipped regions' values or asset paths in a test (see CLAUDE.md).
 
-An entry has an `id`, `order`, `name`, optional look keys (a missing key means "keep the
-baseline"), an optional `look_from`, and optionally the handling blocks `surface_grip` and
-`deep_snow`.
+An entry has an `id`, optional look keys (a missing key means "keep the baseline") and an
+optional `look_from`.
 
 - **`LOOK_KEYS`** is the whitelist `look_of` returns: `sky_panorama`, `grass_texture`,
   `gravel_texture`, `tree_mix`, `bush_billboard`, `spawn_bush_mesh`, `background_color`,
@@ -59,9 +54,6 @@ baseline"), an optional `look_from`, and optionally the handling blocks `surface
   resolves the parent's keys, then overlays the region's own. Exactly one level deep, so
   chains and cycles cannot happen. `look_from` is not a look key and never appears in the
   result.
-- **`surface_grip` / `deep_snow`** name `GameConfig` fields rather than numbers, and are kept
-  out of `LOOK_KEYS` so handling never leaks into a look dict. They are not inherited through
-  `look_from`.
 - **Never invent an asset filename.** Every `res://` path a region authors must exist; a
   dangling one loads as null. Guarded by `test_region_assets.gd` →
   `test_every_authored_region_resource_path_resolves`.
@@ -69,16 +61,13 @@ baseline"), an optional `look_from`, and optionally the handling blocks `surface
 
 ### Helper API (all static)
 
-- `all()` / `by_id(id)` / `index_of(id)` / `ordered()`: lookups.
+- `all()` / `by_id(id)` / `index_of(id)`: lookups.
 - `look_of(region_id)`: only the `LOOK_KEYS` the region (and its `look_from` parent) authors,
   not a dict merged against the baseline. Callers check each key and keep their own default
   when it is absent.
 - `tree_mix(look)`: the look's `tree_mix`, or `DEFAULT_TREE_MIX` (one home `tree.png`) when
   it has none. Each species is `{texture, profile, weight}` plus an optional `size_scale`.
 - `spawns_bush_mesh(look)`: the `spawn_bush_mesh` flag, default `true`.
-- `surface_grip_of(cfg, id)` / `deep_snow_of(cfg, id)`: the handling blocks resolved to
-  `GameConfig` values; `{}` when a region authors none. A block naming a missing field is
-  skipped with a warning, never defaulted to 0.
 
 ## Adding a region
 

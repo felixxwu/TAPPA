@@ -24,11 +24,13 @@ boot critical path, and every failure mode is a silent no-op.
 | itch Windows `.exe` | **yes** | itch page | nothing updates a downloaded exe for the player |
 | itch Android `.apk` (sideload) | **yes** | itch page | same — a sideloaded APK has no updater |
 | Google Play `.aab` | **yes** | its Play listing | **Play does not reliably update the app for the player.** A closed/internal testing track in particular can leave testers sitting on an old build indefinitely, which is exactly the case this feature exists for |
+| iOS | no | — | App Review rejects an app that points players at a download outside the App Store, and the App Store updates it |
 | Web | no | — | `tools/deploy_pages.sh` serves the engine files from a build-unique `/b/<build-id>/` path and never caches `index.html`, so a browser player is by construction on the newest build |
 | Editor / test runner | no | — | the version is the unstamped `0.0-dev`, which has no build number |
 
 `UpdateCheck.applicable()` is the single gate (`Platform.is_headless()`,
-`Platform.is_web()`, and a parseable local build number). When it returns false
+`Platform.is_web()`, the `ios` feature, and a parseable local build number); the
+decision itself is the pure `applicable_on()`, so the iOS branch is testable. When it returns false
 **no request is made at all**.
 
 **A Play install is never pointed at the itch download.** Play's policy is that a

@@ -236,11 +236,3 @@ func test_refresh_fitment_clears_nitrous_that_has_been_removed() -> void:
 	e.refresh_fitment()
 	assert_eq(e.nitrous_fraction(), 0.0, "removing it empties the tank")
 	assert_false(e.nitrous_delivering, "and stops any delivery")
-
-
-# --- Awarding it: DELETED (the persistent parts model) ---------------------------
-# A test lived here pinning nitrous to an ordinary garage ROW that installs DISABLED, as
-# against the hidden auto-enabled slot it used to be. Both shapes are gone: there is no
-# garage part list, no slot model and no install path (todo/roguelike-pivot.md). Nitrous
-# survives as an EFFECT -- see test_upgrade_library.gd's write_fields coverage and the
-# per-stage physics below, which is what actually made it interesting.

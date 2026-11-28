@@ -138,3 +138,36 @@ func test_config_carries_a_sane_render_height() -> void:
 	# enough to be a usable frame.
 	var cfg := GameConfig.new()
 	assert_true(cfg.render_height >= 0, "render_height is 0 (native) or a positive height")
+
+
+# --- Safe area (notch / home indicator) ---------------------------------------
+
+func test_safe_insets_scale_window_pixels_to_logical() -> void:
+	# A 2000x1000 window drawn from a 1000x500 logical frame: 100px of notch is 50 logical.
+	var insets := DisplayStretch.safe_insets(Vector2i(2000, 1000),
+		Rect2i(100, 0, 1800, 940), Vector2i(1000, 500))
+	assert_eq(insets[0], Vector2(50, 0), "left / top insets in logical pixels")
+	assert_eq(insets[1], Vector2(50, 30), "right / bottom insets in logical pixels")
+
+
+func test_no_safe_area_means_no_insets() -> void:
+	var insets := DisplayStretch.safe_insets(Vector2i(2000, 1000), Rect2i(), Vector2i(1000, 500))
+	assert_eq(insets, [Vector2.ZERO, Vector2.ZERO], "an empty safe area insets nothing")
+
+
+func test_safe_shift_moves_each_corner_inward() -> void:
+	var start := Vector2(50, 10)
+	var end := Vector2(40, 30)
+	assert_eq(DisplayStretch.safe_shift(Vector2.ZERO, start, end), Vector2(50, 10), "top-left moves right and down")
+	assert_eq(DisplayStretch.safe_shift(Vector2.ONE, start, end), Vector2(-40, -30), "bottom-right moves left and up")
+	assert_eq(DisplayStretch.safe_shift(Vector2(0.5, 1.0), start, end), Vector2(5, -30),
+		"bottom-centre follows the safe area's own centre")
+
+
+func test_fit_offsets_shrinks_a_full_rect_control_to_the_safe_area() -> void:
+	var c := Control.new()
+	c.set_anchors_preset(Control.PRESET_FULL_RECT)
+	DisplayStretch.fit_offsets(c, Vector2(50, 10), Vector2(40, 30))
+	assert_eq(Vector4(c.offset_left, c.offset_top, c.offset_right, c.offset_bottom),
+		Vector4(50, 10, -40, -30), "each edge sits on the matching safe-area edge")
+	c.free()

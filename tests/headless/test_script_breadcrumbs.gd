@@ -147,7 +147,6 @@ const BREADCRUMB_BASELINE := [
 	"registry.gd",
 	"slider_row.gd",
 	"spectator_group.gd",
-	"spectator_scatter.gd",
 	"text_field.gd",
 	"tilt_input.gd",
 	"touch_scroll_container.gd",

@@ -37,8 +37,8 @@ func run() -> void:
 	#
 	# What made this necessary: a run failed here twice while the suite was demonstrably
 	# innocent. The developer had launched the GAME while the suite was running, and the game
-	# legitimately writes its own profile. The tell was that `user://auth.json`, the overworld
-	# chunk cache and a log file were all written in the same minute — none of which a
+	# legitimately writes its own profile. The tell was that `user://auth.json`, a cache
+	# file and a log file were all written in the same minute — none of which a
 	# sandboxed run touches, because they are redirected too.
 	#
 	# So consult the production side instead of guessing: SaveManager refuses a headless write

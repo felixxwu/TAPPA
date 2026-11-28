@@ -1,9 +1,7 @@
 extends GutTest
 # Aero-part visibility: spoilers/splitters (meshes tagged `_aero` inside a car
 # body) are hidden by default and revealed only when the "aero" run boost
-# (BoostLibrary.CATALOGUE["aero"]) is fitted — reinstated after a brief spell
-# (todo/roguelike-pivot.md decision 24) where the wing was unconditional on
-# every car. Tests the LOGIC (traversal + reveal-follows-fitted-state), never an
+# (BoostLibrary.CATALOGUE["aero"]) is fitted. Tests the LOGIC (traversal + reveal-follows-fitted-state), never an
 # authored value; the aero boost's numeric effect is covered in
 # test_upgrade_library.gd.
 

@@ -64,7 +64,7 @@ var _car: Node                    # VehicleBody3D-ish: global_transform (+ linea
 var _terrain: Node                # the level (height_at) or null on flat fixtures
 var _terrain_has_height := false  # cached in setup(); _ground() runs per agent per frame
 var _road_cells: Dictionary       # Vector2i -> true, the visible carriageway
-var _tree_grid: Dictionary        # Vector2i -> PackedVector2Array (built by SpectatorScatter)
+var _tree_grid: Dictionary        # Vector2i -> PackedVector2Array (built by SpatialGrid.of_points)
 var _p: Dictionary                # spectator_params() snapshot
 
 var _mms: Array[MultiMesh] = []   # one per model in use; free roam has just the one shared figure
@@ -101,7 +101,7 @@ var _sim_stagger := 0             # per-group tick phase, so groups don't all st
 var _warm_mi: MeshInstance3D      # throwaway single-instance crowd mesh (ragdoll variant warm-up)
 
 
-# Wire a freshly placed group. `member_positions` come from SpectatorScatter.members.
+# Wire a freshly placed group. `member_positions` come from LevelSpectators.place.
 func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 		road_cells: Dictionary, tree_grid: Dictionary, params: Dictionary) -> void:
 	_car = car

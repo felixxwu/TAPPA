@@ -118,7 +118,7 @@ func test_the_target_look_keeps_the_scenes_colour_and_lays_the_weathers_overcast
 	var cfg: GameConfig = Config.data
 	var base_env := {"bg": Color.BLACK, "fog": Color.BLACK, "density": 0.01, "sky_affect": 0.1}
 	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "murk", "look": {
-		"background_color": "mist_background_color", "sky_color": "mist_sky_color",
+		"background_color": "mist_background_color",
 		"sun_energy_mult": "mist_sun_energy_mult",
 		"fog_density_mult": "mist_fog_density_mult",
 		"fog_sky_affect": "mist_fog_sky_affect"}}] as Array[Dictionary])

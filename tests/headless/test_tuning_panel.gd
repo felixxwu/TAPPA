@@ -31,10 +31,7 @@ func test_editing_grip_writes_axis_and_fires_callback() -> void:
 	assert_almost_eq(float(owned["tuning"]["grip_balance"]), 0.5, 0.001)
 	assert_gt(fired[0], 0, "on_change fired")
 
-# EVERY axis is editable, on every car. This asserted the opposite — that aero_balance was
-# locked "without the aero kit" — until todo/roguelike-pivot.md decision 24 ungated tuning
-# outright and took TuningLibrary.axis_unlocked with the parts model that fed it. The
-# behaviour changed deliberately, so the test follows it.
+# EVERY axis is editable, on every car.
 func test_every_axis_is_editable_on_every_car() -> void:
 	var p = _panel(_owned())
 	for axis in TuningLibrary.AXES:

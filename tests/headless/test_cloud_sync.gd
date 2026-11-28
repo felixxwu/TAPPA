@@ -693,7 +693,7 @@ func test_an_ordinary_push_does_not_announce_a_replacement() -> void:
 
 
 # --- CloudBusy: the shared "a cloud call is in flight" state -------------------
-# (scripts/cloud/cloud_busy.gd, todo/challenge-career-reuse-drift.md item 11.)
+# (scripts/cloud/cloud_busy.gd.)
 #
 # These assert the RELATIONSHIP — busy during the call, gone after — and the
 # coercion/failure rules. Never the copy, and never the minimum-duration value:

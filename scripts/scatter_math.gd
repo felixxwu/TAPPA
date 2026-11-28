@@ -1,8 +1,8 @@
 class_name ScatterMath
 # Docs: features/spectators.md — update in the same change as this file.
-# Tests: tests/headless/test_smoke.gd, tests/headless/test_spectator_damage.gd, tests/headless/test_spectator_scatter.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'ScatterMath' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
+# Tests: tests/headless/test_smoke.gd, tests/headless/test_spectator_damage.gd, tests/headless/test_scatter_helpers.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'ScatterMath' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Shared seeded-hash + road-cell helpers for the scatter / field code (
-# SpectatorScatter, SpectatorGroup, ...). Everything here works in the world-XZ plane
+# LevelSpectators, SpectatorGroup, ...). Everything here works in the world-XZ plane
 # (x -> world x, y -> world z) on a 0.5 m road-rasterisation grid.
 #
 # `hash01` is a pure, order-independent pseudo-random in [0, 1) for a (cell, seed, salt)

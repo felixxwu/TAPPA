@@ -95,11 +95,16 @@ static func display_version(raw: String) -> String:
 # True when this build is one the player has to update by hand. False disables the
 # whole feature — no request is made at all.
 static func applicable() -> bool:
-	if Platform.is_headless():
-		return false
-	if Platform.is_web():
-		return false  # served from a build-unique path; always current
-	return current_build() > 0
+	return applicable_on(Platform.is_headless(), Platform.is_web(), OS.has_feature("ios"), current_build())
+
+
+# The gate behind applicable(), with the platform passed in so every branch is testable.
+# iOS is off because App Review rejects an app that points players at a download
+# outside the App Store; the App Store updates it.
+static func applicable_on(headless: bool, web: bool, ios: bool, build: int) -> bool:
+	if headless or web or ios:
+		return false  # web is served from a build-unique path, so always current
+	return build > 0
 
 
 # The store this build came from. The `play` feature is set by preset.2's

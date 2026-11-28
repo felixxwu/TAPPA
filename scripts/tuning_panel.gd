@@ -107,8 +107,7 @@ func _make_slider_row(spec: Dictionary) -> Control:
 
 
 # Reflect the stored tuning onto the sliders. EVERY AXIS IS EDITABLE: the aero-part gate
-# that used to grey out aero_balance went with the parts model
-# (todo/roguelike-pivot.md decision 24 — "tuning survives, ungated").
+# that used to grey out aero_balance went with the parts model.
 func refresh() -> void:
 	var tuning: Dictionary = _owned.get("tuning", {})
 	for axis in TuningLibrary.AXES:

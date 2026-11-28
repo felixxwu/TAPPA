@@ -1,13 +1,10 @@
 class_name RegionLibrary
 extends RefCounted
 # Docs: features/regions.md — update in the same change as this file.
-# Tests: tests/headless/test_region_library.gd, tests/headless/test_menu_nav.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RegionLibrary' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
-# Authored catalogue of REGIONS (parallel to RallyLibrary.RALLIES). A region is one
-# CORNER of the single world map: it groups rallies by their `region` tag and carries
-# optional look overrides for the driven world (grass/gravel/sky/fog/tints) — a
-# missing key inherits the scene / GameConfig baseline. Regions do NOT unlock in
-# sequence; every corner is open from the start, and a region gates nothing — it owns
-# only its look. See features/regions.md.
+# Tests: tests/headless/test_region_library.gd, tests/headless/test_region_assets.gd, tests/headless/test_region_docs.gd — extend in the same change.
+# Authored catalogue of region LOOKS (grass/gravel/sky/fog/tints, tree species). A
+# missing key inherits the scene / GameConfig baseline. The live game reads only
+# look_of("home"); see features/regions.md before building on the rest.
 
 
 # Whitelisted look-override keys (used by look_of + the level). Deliberately NOT here:
@@ -32,18 +29,7 @@ const DEFAULT_TREE_MIX: Array = [
 	{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
 ]
 
-# The authored regions. Each is a run's unit of content: you pick one, drive its eight
-# stages, and clearing it unlocks the next (todo/roguelike-pivot.md).
-#
-# ORDER IS AUTHORED, ON THE `order` FIELD — never on array position. This used to say
-# order carried no meaning at all, which was true of the old world map; the roguelike
-# pivot's linear unlock changed that, and the FIELD is how it changed. Array position
-# stays meaningless: reorder these entries freely, and read `order_of()` / `ordered()`
-# rather than `index_of()` anywhere progression, difficulty or payout depends on how far
-# through the game a region sits.
-#
-# `order` must be unique and contiguous from 0. Region 0 is the one a new player starts
-# with; every other region is gated on the one before it being cleared.
+# The authored regions.
 #
 # NEVER INVENT AN ASSET FILENAME. Every res:// path authored here must be a file that
 # already exists — the -greece/-snow naming convention makes made-up names look right,
@@ -65,8 +51,7 @@ const REGIONS: Array[Dictionary] = [
 	# other look field inherits the scene environment + GameConfig
 	# baseline unchanged, so the home world still looks byte-identical.
 	{
-		"id": "home", "order": 0, "name": "The Green",
-		# ^ progression order: country(0), peninsula(1), taiga(2), lakes(3), Alps(4).
+		"id": "home",
 		# size_scale sets each species' size and card shape: height 9.375 m (the profile's 7.5
 		# x 1.25), width = height x the atlas frame's aspect. It is done here, not on the
 		# shared GameConfig profile, so the other species keep their tuned sizes.
@@ -76,11 +61,7 @@ const REGIONS: Array[Dictionary] = [
 		],
 		"spawn_bush_mesh": true,
 	},
-	# "The Dunes" — the Greek-INSPIRED arid region. It is the one region whose
-	# old working name named a real-world country outright; every sibling is a
-	# geographic feature ("The Lakes", "The Taiga", "The Alps"), so this one now is
-	# too. The id ("greece") and the -greece texture filenames stay: ids key saved
-	# progress and renaming assets buys nothing. Ships the three swapped textures
+	# The Greek-inspired arid region. Ships the three swapped textures
 	# + sky, plus a Greek tree
 	# split: 70% the star-shaped Greek billboard (tree-greece.webp, a large low, dry
 	# Mediterranean canopy — the "region" sizing profile) and 30% the home tree.png
@@ -91,7 +72,7 @@ const REGIONS: Array[Dictionary] = [
 	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
-		"id": "greece", "order": 1, "name": "The Dunes",
+		"id": "greece",
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",
 		"tree_mix": [
@@ -123,7 +104,7 @@ const REGIONS: Array[Dictionary] = [
 	# of empty ground that wants filling — the opposite of Greece and the Alps, which
 	# both drop ground cover.
 	{
-		"id": "taiga", "order": 2, "name": "The Taiga",
+		"id": "taiga",
 		"look_from": "home",
 		"tree_mix": [
 			{"texture": "res://textures/tree-taiga.webp", "profile": "home", "weight": 1.0,
@@ -132,12 +113,10 @@ const REGIONS: Array[Dictionary] = [
 	},
 	# Home's look under another name; it used to differ only in its (now deleted) sea level.
 	{
-		"id": "home_coast", "order": 3, "name": "The Lakes",
+		"id": "home_coast",
 		"look_from": "home",
 	},
-	# The alpine NE corner. The one region that does more than look different: it is
-	# also the first to influence HANDLING, via the two non-LOOK_KEYS blocks below.
-	# See features/snow-region.md.
+	# The alpine NE corner. See features/snow-region.md.
 	#
 	# Look: the road and the open ground are both snow — near-white, deliberately
 	# textured rather than flat, because this renderer is unshaded with baked vertex
@@ -146,7 +125,7 @@ const REGIONS: Array[Dictionary] = [
 	# grass_particle_color turns the wheel spray white — the home green would read as
 	# grass blades flung off a snowfield.
 	{
-		"id": "snow", "order": 4, "name": "The Alps",
+		"id": "snow",
 		"sky_panorama": "res://textures/sky-snow.jpg",
 		"grass_texture": "res://textures/snow-ground.jpg",
 		"gravel_texture": "res://textures/snow-road.jpg",
@@ -192,21 +171,6 @@ const REGIONS: Array[Dictionary] = [
 		# Sampled from the horizon band of sky-snow.jpg (avg rgb 144,154,167) so the fog
 		# resolves into the panorama instead of banding against it.
 		"background_color": Color(0.567, 0.604, 0.658),
-
-		# --- Handling. NOT LOOK_KEYS, and deliberately so: folding them into look_of would
-		# leak non-look keys into the dict the level treats as look overrides.
-		#
-		# They name GameConfig fields rather than authoring numbers (the WeatherLibrary
-		# pattern), so every tunable stays in scripts/game_config.gd.
-		"surface_grip": {
-			"grass": "snow_grass_grip", # deep snow at the roadside
-			"gravel": "snow_gravel_grip", # packed snow road
-			"tarmac": "snow_tarmac_grip", # a dusting over asphalt
-		},
-		"deep_snow": {
-			"depth": "snow_visual_depth_m",
-			"drag": "snow_deep_drag",
-		},
 	},
 ]
 
@@ -226,74 +190,6 @@ static func by_id(id: String) -> Dictionary:
 
 static func index_of(id: String) -> int:
 	return Registry.index_of(all(), id)
-
-
-# --- Progression order (todo/roguelike-pivot.md) ------------------------------
-
-
-# Every region sorted by `order`. The progression, in the order a player meets it.
-static func ordered() -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	for region in all():
-		out.append(region)
-	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return int(a.get("order", 0)) < int(b.get("order", 0)))
-	return out
-
-
-# --- Handling overrides (features/snow-region.md) -----------------------------
-# A region may override the per-surface grip scales and author a deep-snow block. Both
-# are read directly, NOT through look_of — see
-# the comment on the snow entry for why they are not LOOK_KEYS.
-#
-# A region authoring no override resolves to {}.
-#
-# NEITHER is inherited through `look_from`. A snow-coast child
-# would author its own or have none — "same look, own handling" is the same split that
-# makes the coastal regions work.
-
-# The three per-surface μ scales this region overrides, resolved from the GameConfig
-# fields it NAMES (it never authors numbers, so all tuning stays in game_config.gd).
-# {} when the region authors none — the overwhelmingly common case, and the reason
-# every other region's grip is byte-identical to the authored baseline.
-static func surface_grip_of(cfg: GameConfig, region_id: String) -> Dictionary:
-	return _resolve_fields(cfg, by_id(region_id).get("surface_grip", {}))
-
-# The deep-snow block — {depth, drag} — resolved from the named GameConfig fields.
-# {} when the region authors none, which is how every non-snow stage gets a zero
-# drag and a zero visual raise for free.
-static func deep_snow_of(cfg: GameConfig, region_id: String) -> Dictionary:
-	return _resolve_fields(cfg, by_id(region_id).get("deep_snow", {}))
-
-# Shared resolver for a {key: <GameConfig field name>} block.
-#
-# Returns the config values AS-IS, deliberately un-coerced: these blocks name floats
-# today but nothing about the pattern is numeric, and an earlier float() here crashed
-# rally start the moment a block named a Color field. Callers coerce at the point of
-# use, where the expected type is actually known.
-#
-# A field the config does not carry is SKIPPED rather than defaulted, so a typo shows up
-# as the baseline value plus a warning, never as a silent 0.0 that would read as
-# "no grip at all".
-static func _resolve_fields(cfg: GameConfig, block: Dictionary) -> Dictionary:
-	var out := {}
-	if cfg == null:
-		return out
-	for key in block:
-		var field := String(block[key])
-		if field == "":
-			continue
-		# Test the RESOLVED VALUE for null rather than probing the property with `in`:
-		# on an Object `in` does not mean "has this property", so it let a mis-named
-		# field through to float(null) — which fails as "Nonexistent 'float'
-		# constructor" at rally start rather than anywhere near the typo.
-		var value: Variant = cfg.get(field)
-		if value != null:
-			out[key] = value
-		else:
-			push_warning("RegionLibrary: '%s' names GameConfig.%s, which does not exist"
-				% [key, field])
-	return out
 
 
 # The tree species split for a resolved region look: the authored `tree_mix`, or the

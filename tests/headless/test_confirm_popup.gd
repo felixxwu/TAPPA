@@ -64,7 +64,6 @@ func test_back_on_a_single_action_popup_fires_that_action() -> void:
 # dismissing it "does nothing" except reveal a twin with the focus cursor reset.
 # That shipped once, from two subscribers to one broadcast each checking its own
 # private latch. The rule now lives in ConfirmPopup.MODAL_GROUP.
-# See todo/challenge-career-reuse-drift.md item 10.
 
 func test_a_popup_joins_the_modal_group_and_is_reported_tree_wide() -> void:
 	assert_null(ConfirmPopup.any_open(get_tree()), "setup: nothing on screen")
@@ -108,9 +107,6 @@ func test_allow_stack_lets_a_failure_notice_through() -> void:
 	assert_not_null(
 		ConfirmPopup.open(_host, "Failure", "B", [{"label": "OK"}], 0, 0, true),
 		"allow_stack opts out of the exclusivity rule")
-
-# --- open_committing: DELETED with its entry point (no caller reserves a modal
-# slot around a transaction any more) -----------------------------------------
 
 # --- Long body: scroll, don't push the buttons off screen ---------------------
 # A ConfirmPopup has no touch dismissal other than its own buttons (trigger_back

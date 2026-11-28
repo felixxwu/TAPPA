@@ -37,10 +37,8 @@ features it has, never the numbers (those stay in `scripts/game_config.gd`). Eve
 | `wind` | crosswind body force: `strength` / `gust` / `dir_deg` fields (`WIND_KEYS`) | `Crosswind.wind_params` ← `car.gd` → `_resolve_wind` ([car-physics.md](car-physics.md)) |
 | `headlights` | field holding the headlight-cone strength (0..1). Omitted ⇒ lights off | `WeatherLibrary.headlight_amount` ← `HeadlightCone.amount` |
 | `foliage_wind` | field holding tree-sway strength. Omitted ⇒ the shared `foliage_wind_strength` | `WindSway.strength` ([trees.md](trees.md)) |
-| `road_tint` | `{"amount", "color"}` fields for darkening / tinting the road | **nothing** (see "Unread" below) |
-| `lightning` | `flash` / `duration` / `interval_min` / `interval_max` fields (`LIGHTNING_KEYS`) | **nothing** |
 
-`look`'s `LOOK_KEYS` are `background_color`, `sky_color`, `sun_energy_mult`,
+`look`'s `LOOK_KEYS` are `background_color`, `sun_energy_mult`,
 `fog_density_mult`, `fog_sky_affect`. `sky_panorama` sits beside the `look` block rather
 than in it so the other conditions don't have to author a sky they don't change.
 
@@ -55,7 +53,6 @@ API beyond the seam:
   the entry names none.
 - `is_wet(id)` / `wet_ids()`: see below.
 - `config_fields(entry)`: every `GameConfig` field the entry names (used by tests).
-- `tinted(col, amount, toward, blend)`: a road-tint colour helper with no live caller.
 
 ### Wetness: never compare against `"rain"`
 
@@ -99,8 +96,7 @@ beside the view and starts it.
 - **Fade.** `LevelWeather.target_look` builds the target from the scene's own environment
   plus the entry's `look` (background and fog colour, fog sky affect, `sun_energy_mult`) and
   `sky_panorama`; `_step` lerps to it over `level_weather_fade_s`, swapping the panorama
-  halfway behind a swell of fog. Nothing is written between fades. `look.sky_color` is not
-  used.
+  halfway behind a swell of fog. Nothing is written between fades.
 - **Fog thickness is the fog's far end, not its density.** The level uses depth fog, which
   ignores `fog_density`, so `fog_depth_end = level_fog_end_m × base density / target density`
   is what fades. Photo mode (`LevelView._render_off`) restores `LevelWeather.fog_end()`, and
@@ -143,12 +139,4 @@ light term and a storm's dimmed day is far brighter than night. `night` and `sto
 `CarLamps` reads the same `HeadlightCone.amount` for the lamp glow. Shader side:
 [rendering.md](rendering.md) → "The fake headlight cone".
 
-## Unread table entries
-
-These are authored but no live code reads them (they were consumed by the deleted
-`world.gd`):
-
-- `road_tint` on every entry that has one, the `ROAD_TINT_KEYS` const and `tinted()`.
-- `lightning` on `storm`, and its `storm_lightning_*` `GameConfig` fields.
-- `look.sky_color` on every entry (the `*_sky_color` fields).
-- `sandstorm` as a whole is reachable only by adding it to `level_weather_pool`.
+`sandstorm` is authored but reachable only by adding it to `level_weather_pool`.

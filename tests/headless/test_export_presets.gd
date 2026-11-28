@@ -35,3 +35,37 @@ func test_every_preset_ships_the_level_save() -> void:
 		assert_false(_matches(level, exclude), "%s doesn't exclude %s" % [name, level])
 		checked += 1
 	assert_gt(checked, 0, "found export presets")
+
+
+func _ios_options() -> Dictionary:
+	var cfg := ConfigFile.new()
+	cfg.load(PRESETS)
+	for section in cfg.get_sections():
+		if section.begins_with("preset.") and not section.ends_with(".options") \
+				and cfg.get_value(section, "platform", "") == "iOS":
+			var out := {}
+			for key in cfg.get_section_keys(section + ".options"):
+				out[key] = cfg.get_value(section + ".options", key)
+			return out
+	return {}
+
+
+func test_ios_preset_ships_to_the_app_store() -> void:
+	var o := _ios_options()
+	assert_false(o.is_empty(), "there is an iOS preset")
+	assert_eq(int(o.get("application/export_method_release", -1)), 0, "release builds are App Store builds")
+	assert_ne(String(o.get("application/bundle_identifier", "")), "", "the iOS preset has a bundle ID")
+
+
+func test_ios_privacy_manifest_declares_cloud_save_data() -> void:
+	# App Store review compares the privacy manifest with what the app sends: cloud save
+	# sends an email address and an account ID, used only to make the save work.
+	const APP_FUNCTIONALITY := 2
+	var o := _ios_options()
+	assert_false(bool(o.get("privacy/tracking_enabled", true)), "the app does no tracking")
+	for kind in ["email_address", "user_id"]:
+		var base := "privacy/collected_data/%s/" % kind
+		assert_true(bool(o.get(base + "collected", false)), "%s is declared as collected" % kind)
+		assert_false(bool(o.get(base + "used_for_tracking", true)), "%s is not used for tracking" % kind)
+		assert_true(int(o.get(base + "collection_purposes", 0)) & APP_FUNCTIONALITY != 0,
+			"%s is collected for app functionality" % kind)

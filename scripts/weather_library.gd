@@ -1,9 +1,9 @@
 class_name WeatherLibrary
 extends RefCounted
 # The authored catalogue of WEATHER CONDITIONS — the single source of truth for what
-# each condition IS, in the style of CarLibrary.CARS / RallyLibrary.RALLIES /
-# RegionLibrary.REGIONS. Every consumer (tyre grip, the rival lap-time model, the
-# world look, the particle field, the loading-screen tell) reads THIS table; none of them may test `== WEATHER_x` any more.
+# each condition IS, in the style of CarLibrary.CARS. Every consumer (tyre grip, the
+# world look, the particle field, crosswind, headlights) reads THIS table; none of them
+# may test `== WEATHER_x`.
 #
 # Before this table the system was shaped for two states and had grown to three, with
 # a parallel `if weather == …` chain in five different files that all had to be kept
@@ -18,8 +18,8 @@ extends RefCounted
 # have that feature", which is exactly how DRY is expressed — an entry with nothing
 # but an id):
 #
-#   "id"             String  — stable id, matches the authored event `weather` string
-#                              and WeatherLibrary.WEATHER_* / GameConfig.weather.
+#   "id"             String  — stable id: WeatherLibrary.WEATHER_* / GameConfig.weather
+#                              and the ids in GameConfig.level_weather_pool.
 #   "grip_mult"      String  — GameConfig field holding the global tyre μ multiplier.
 #                              "" / omitted => exactly 1.0 (see grip_mult()).
 #   "particles"      String  — WeatherField particle kind ("rain" / "sand"). ""/omitted
@@ -35,14 +35,6 @@ extends RefCounted
 #                              the GameConfig field that supplies it. EMPTY/omitted =>
 #                              the world look is not touched at all, which is what
 #                              keeps a dry stage at exactly zero added per-frame cost.
-#   "road_tint"      Dict    — {"amount": <GameConfig field>, "color": <GameConfig
-#                              field>}. "amount" is the strength; "color" names the
-#                              colour the road albedo is LERPED toward, and when it is
-#                              OMITTED the albedo is simply MULTIPLIED by the amount
-#                              (a plain darkening). Omitted entirely => the road albedo
-#                              is left alone. A condition tinting toward a new colour
-#                              (dust, snow) is therefore pure authoring: name a colour
-#                              field, no consumer change.
 #   "wind"           Dict    — a LATERAL CROSSWIND force on the car body, mapping
 #                              "strength"/"gust"/"dir_deg" to GameConfig fields (see
 #                              WIND_KEYS). Omitted => no wind force at all. Read by
@@ -62,20 +54,16 @@ extends RefCounted
 #                              case for every condition but the stormy ones: wind
 #                              reads the SAME everywhere except in a storm, where it
 #                              authors higher. Read by WindSway; purely cosmetic.
-#   "lightning"      Dict    — an occasional cosmetic flash, mapping "flash"/
-#                              "duration"/"interval_min"/"interval_max" to GameConfig
-#                              fields (see LIGHTNING_KEYS). Omitted => no flashes.
-#                              Cosmetic.
 #
-# ADDING A CONDITION: add its GameConfig fields to game_config.gd + game_config.gd,
-# add one entry here naming them, and author `"weather": "<id>"` on the events that
-# should run it. No consumer changes.
+# ADDING A CONDITION: add its GameConfig fields to game_config.gd, add one entry here
+# naming them, its WETNESS row, and its id to GameConfig.level_weather_pool. No consumer
+# changes.
 
 # The environment knobs a "look" block may supply, each mapped to a GameConfig field
 # name. A look block authors ALL of these or none — they
 # are read as a set. (Deliberately NOT a place for numbers; see the header.)
 const LOOK_KEYS := [
-	"background_color", "sky_color", "sun_energy_mult",
+	"background_color", "sun_energy_mult",
 	"fog_density_mult", "fog_sky_affect",
 ]
 
@@ -97,12 +85,12 @@ const WEATHER_NIGHT := "night"
 const CONDITIONS: Array[Dictionary] = [
 	# Dry is the ABSENCE of every feature: no grip multiplier (so grip_mult() is
 	# exactly 1.0 and the μ multiply at each contact is unconditional), no look
-	# override, no road tint, no particles, no loading tell. A dry stage therefore
+	# override, no particles. A dry stage therefore
 	# constructs nothing and writes nothing — exactly zero added per-frame cost, which
 	# is a hard requirement on the old phones this game targets. Keep it empty.
 	{"id": "dry"},
-	# Rain: flat grey overcast made entirely out of fog (no second sky), a darkened
-	# wet road, falling drops, and a reduced μ that scales the rival field too.
+	# Rain: flat grey overcast made entirely out of fog (no second sky), falling drops,
+	# and a reduced μ.
 	{
 		"id": "rain",
 		"grip_mult": "rain_grip_mult",
@@ -110,17 +98,13 @@ const CONDITIONS: Array[Dictionary] = [
 		"particle_count": "rain_particle_count",
 		"look": {
 			"background_color": "rain_background_color",
-			"sky_color": "rain_sky_color",
 			"sun_energy_mult": "rain_sun_energy_mult",
 			"fog_density_mult": "rain_fog_density_mult",
 			"fog_sky_affect": "rain_fog_sky_affect",
 		},
-		# No "color": the wet road is DARKENED (albedo × amount), not tinted.
-		"road_tint": {"amount": "rain_road_darken"},
 	},
 	# Sandstorm: the same fog-only mechanism in dusty tan, dust blown along one fixed
-	# world-space heading, and a road LERPED toward tan rather than darkened (dust
-	# cakes on the surface rather than wetting it).
+	# world-space heading.
 	{
 		"id": "sandstorm",
 		"grip_mult": "sand_grip_mult",
@@ -130,43 +114,26 @@ const CONDITIONS: Array[Dictionary] = [
 		"particle_speed": "sand_wind_speed",
 		"look": {
 			"background_color": "sand_background_color",
-			"sky_color": "sand_sky_color",
 			"sun_energy_mult": "sand_sun_energy_mult",
 			"fog_density_mult": "sand_fog_density_mult",
 			"fog_sky_affect": "sand_fog_sky_affect",
 		},
-		# Dust CAKES on the surface, so the albedo is lerped toward a dust colour
-		# rather than darkened — expressed by naming a colour field, not by a mode.
-		"road_tint": {"amount": "sand_road_tint", "color": "sand_road_tint_color"},
 		# Same reasoning as storm's — see the "foliage_wind" key doc above.
 		"foliage_wind": "sand_foliage_wind_strength",
 	},
-	# Fog: the cheapest condition in the table — no particles at all, no grip
-	# multiplier, no road tint, just the environment knobs pushed hard. It attacks
-	# VISIBILITY rather than μ, which makes it the one condition that is a genuine
-	# DIFFICULTY lever rather than a variety one (the lap-time model has no eyes, so
-	# rivals are unaffected) — deliberate, and authored on few events. See
-	# features/weather.md → "Rival times".
-	#
-	# Note what is ABSENT and why: no "grip_mult" (μ is exactly 1.0, as dry — fog's
-	# whole identity is that it is NOT a grip condition), no "particles" (an omitted
-	# kind builds no field at all — this is the case the table was generalised for),
-	# and no "road_tint" (a foggy road is dry, so it must not darken like rain's).
+	# Fog: the cheapest condition in the table — no particles, no grip multiplier, just
+	# the environment knobs pushed hard. It attacks VISIBILITY rather than μ.
 	{
 		"id": "fog",
 		"look": {
 			"background_color": "mist_background_color",
-			"sky_color": "mist_sky_color",
 			"sun_energy_mult": "mist_sun_energy_mult",
 			"fog_density_mult": "mist_fog_density_mult",
 			"fog_sky_affect": "mist_fog_sky_affect",
 		},
 	},
 	# Storm: rain's look and rain's particle KIND (so no new particle code), authored
-	# heavier and wetter, plus two things rain does not have — a lateral crosswind
-	# force on the car ("wind") and an occasional lightning flash ("lightning").
-	# Both are new entry keys, each read by exactly one consumer; see the key docs
-	# above the table.
+	# heavier and wetter, plus a lateral crosswind force on the car ("wind").
 	{
 		"id": "storm",
 		"grip_mult": "storm_grip_mult",
@@ -177,22 +144,14 @@ const CONDITIONS: Array[Dictionary] = [
 		"wind_dir": "storm_wind_dir_deg",
 		"look": {
 			"background_color": "storm_background_color",
-			"sky_color": "storm_sky_color",
 			"sun_energy_mult": "storm_sun_energy_mult",
 			"fog_density_mult": "storm_fog_density_mult",
 			"fog_sky_affect": "storm_fog_sky_affect",
 		},
-		"road_tint": {"amount": "storm_road_darken"},
 		"wind": {
 			"strength": "storm_wind_strength",
 			"gust": "storm_wind_gust",
 			"dir_deg": "storm_wind_dir_deg",
-		},
-		"lightning": {
-			"flash": "storm_lightning_flash",
-			"duration": "storm_lightning_duration_s",
-			"interval_min": "storm_lightning_interval_min_s",
-			"interval_max": "storm_lightning_interval_max_s",
 		},
 		# A storm is dark enough that the car's lights come on — the second condition to
 		# author a cone, and the reason the cone's strength is a table key rather than a
@@ -206,13 +165,11 @@ const CONDITIONS: Array[Dictionary] = [
 		# base sway. See the "foliage_wind" key doc above and WindSway.
 		"foliage_wind": "storm_foliage_wind_strength",
 	},
-	# Snowfall. Authored onto the alpine region's events (features/snow-region.md); the
-	# same placement convention sandstorm follows for the desert.
+	# Snowfall. LevelWeather shows it in place of rain over the level's snow biome
+	# (features/snow-region.md).
 	#
-	# It deliberately authors NO grip_mult. The snow REGION already owns grip for every
-	# stage in that corner, dry or not, so a weather multiplier here would be a second,
-	# redundant lever over the same variable — and would make a snowfall stage
-	# arbitrarily slipperier than a dry stage on the same frozen ground.
+	# It deliberately authors NO grip_mult: LevelView.set_snow already sets grip from the
+	# snow under the car, so a weather multiplier here would be a second lever over it.
 	#
 	# Like fog, this is a BRIGHT condition — a white-out, not a dusk. The common
 	# mistake is authoring it dark.
@@ -224,23 +181,19 @@ const CONDITIONS: Array[Dictionary] = [
 		"wind_dir": "snowfall_wind_dir_deg",
 		"look": {
 			"background_color": "snowfall_background_color",
-			"sky_color": "snowfall_sky_color",
 			"sun_energy_mult": "snowfall_sun_energy_mult",
 			"fog_density_mult": "snowfall_fog_density_mult",
 			"fog_sky_affect": "snowfall_fog_sky_affect",
 		},
-		# Fresh snow SETTLES white on the road, so this lerps the albedo toward a colour
-		# (sandstorm's caking mechanism) rather than darkening it the way rain does.
-		"road_tint": {"amount": "snowfall_road_tint", "color": "snowfall_road_tint_color"},
 	},
-	# Night. PURELY A LOOK (todo/night-weather-and-headlights.md, Decision 4): the world
+	# Night. PURELY A LOOK: the world
 	# is darkened by a very low sun_energy_mult, which the terrain bakes into its vertex
 	# colours, and a fake headlight cone re-lights a wedge in front of the player's car
 	# additively in the shaders. Nothing here is physics.
 	#
 	# Note what is ABSENT, and that this is the point: no "grip_mult" (μ is exactly 1.0,
 	# as dry — night is a visibility condition, not a grip one), no "wind", no
-	# "particles" (no field is constructed at all), no "lightning". It therefore changes no lap time.
+	# "particles" (no field is constructed at all).
 	#
 	# The cone's SHAPE fields (headlight_*) are deliberately NOT named here: they are
 	# shared by every condition that switches the lights on and are driven per-frame as
@@ -255,14 +208,10 @@ const CONDITIONS: Array[Dictionary] = [
 		"id": "night",
 		"look": {
 			"background_color": "night_background_color",
-			"sky_color": "night_sky_color",
 			"sun_energy_mult": "night_sun_energy_mult",
 			"fog_density_mult": "night_fog_density_mult",
 			"fog_sky_affect": "night_fog_sky_affect",
 		},
-		# No "color": a night road is DARKENED (albedo × amount) like rain's, not tinted
-		# toward a new colour the way dust or settled snow is.
-		"road_tint": {"amount": "night_road_darken"},
 		"headlights": "night_headlight_amount",
 		# Names a GameConfig field holding a sky path. OPTIONAL and unique to night so
 		# far: no other condition changes the sky, because rain and dust are things
@@ -313,15 +262,6 @@ const WETNESS := {
 # Unknown ids resolve through by_id()'s dry fallback exactly like every other query here,
 # so a typo'd or removed condition is dry rather than a crash. A condition installed by
 # override_for_test() that WETNESS does not name is likewise dry.
-# A ground colour as a condition's road tint leaves it: lerped `amount` toward `toward` when
-# `blend` (dust caking on), else multiplied by `amount` (a wet road darkens). Used by the
-# level (LevelWeather).
-static func tinted(col: Color, amount: float, toward: Color, blend: bool) -> Color:
-	if blend:
-		return col.lerp(Color(toward.r, toward.g, toward.b, col.a), amount)
-	return Color(col.r * amount, col.g * amount, col.b * amount, col.a)
-
-
 static func is_wet(id: String) -> bool:
 	return bool(WETNESS.get(String(by_id(id).get("id", DEFAULT_ID)), false))
 
@@ -338,19 +278,9 @@ static func wet_ids() -> Array:
 	return out
 
 
-# Sub-keys of a "road_tint" block, in a stable order — both name GameConfig fields.
-# "color" is OPTIONAL: without it the road albedo is multiplied by "amount" (darkened);
-# with it the albedo is lerped toward that colour by "amount". This is what keeps the
-# per-condition tan/darken special case OUT of code.
-const ROAD_TINT_KEYS := ["amount", "color"]
-
 # Sub-keys of a "wind" block, in a stable order — the GameConfig fields the crosswind
 # body force reads.
 const WIND_KEYS := ["strength", "gust", "dir_deg"]
-
-# Sub-keys of a "lightning" block. Like the look/particle/road-tint keys it is
-# cosmetic.
-const LIGHTNING_KEYS := ["flash", "duration", "interval_min", "interval_max"]
 
 static var _seam := Registry.Seam.new(CONDITIONS)
 
@@ -414,18 +344,10 @@ static func config_fields(entry: Dictionary) -> Array:
 	for key in LOOK_KEYS:
 		if look.has(key):
 			out.append(String(look[key]))
-	var tint: Dictionary = entry.get("road_tint", {})
-	for key in ROAD_TINT_KEYS:
-		if tint.has(key):
-			out.append(String(tint[key]))
 	var wind: Dictionary = entry.get("wind", {})
 	for key in WIND_KEYS:
 		if wind.has(key):
 			out.append(String(wind[key]))
-	var lightning: Dictionary = entry.get("lightning", {})
-	for key in LIGHTNING_KEYS:
-		if lightning.has(key):
-			out.append(String(lightning[key]))
 	# De-duplicated: a field may legitimately be named twice by one entry (storm points
 	# both its particle "wind_dir" and its force's "dir_deg" at one heading, so the
 	# drops stream the way the car is pushed). Listing it once keeps this a clean set.

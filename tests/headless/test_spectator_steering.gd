@@ -107,7 +107,7 @@ func test_road_force_is_graded_by_distance() -> void:
 # --- obstacle avoidance -------------------------------------------------------
 
 func test_obstacle_force_pushes_away_from_a_tree() -> void:
-	var grid := SpectatorScatter.build_point_grid(PackedVector2Array([Vector2(0.3, 0)]), 1.0)
+	var grid := SpatialGrid.of_points(PackedVector2Array([Vector2(0.3, 0)]), 1.0)
 	var f := SpectatorGroup.obstacle_force(Vector2(0, 0), grid, 1.0, 0.5)
 	assert_lt(f.x, 0.0, "pushed -x, away from the tree at +x")
 
@@ -206,9 +206,7 @@ func test_roadside_crowd_settles_instead_of_jiggling() -> void:
 	p["active_radius_m"] = 100000.0   # LOD gate always open
 	p["sim_interval"] = 1             # steer every tick for a deterministic run
 	var sep: float = p["separation_m"]
-	var members := SpectatorScatter.members(
-		Vector2(100, 100), Vector2(0, 1), 15.0, 11.0, 50, sep, road, {},
-		p["tree_avoid_m"], 1.5, 1)
+	var members := _roadside_band(Vector2(100, 100), 15.0, 11.0, 50, sep, road)
 	assert_gt(members.size(), 10, "scattered a real roadside crowd")
 
 	var group := SpectatorGroup.new()
@@ -288,7 +286,7 @@ func test_cached_static_push_equals_the_live_probe() -> void:
 	# decision downstream.
 	var p := _flat_params()
 	var road := _road_band()
-	var trees := SpectatorScatter.build_point_grid(
+	var trees := SpatialGrid.of_points(
 		PackedVector2Array([Vector2(108, 50), Vector2(92, 51)]), p["tree_cell_m"])
 	var members := PackedVector2Array([
 		Vector2(106, 50),    # just off the +x verge
@@ -443,3 +441,23 @@ func test_knock_spin_scale_tapers_to_zero_at_low_speed() -> void:
 		"spin saturates at 1.0 for a fast hit")
 	var mid := SpectatorGroup.knock_spin_scale(11.0, 1.0, 22.0)
 	assert_almost_eq(mid, 0.5, 1e-4, "spin scales linearly with speed below saturation")
+
+
+# A crowd lining both verges of a straight stretch: a jittered grid over a band along
+# +y, minus the road cells, thinned by a seeded shuffle so the spread stays even.
+func _roadside_band(center: Vector2, half_len: float, half_width: float, count: int,
+		sep: float, road: Dictionary) -> PackedVector2Array:
+	var cands: Array[Vector2] = []
+	for a in range(-int(ceil(half_len / sep)), int(ceil(half_len / sep)) + 1):
+		for c in range(-int(ceil(half_width / sep)), int(ceil(half_width / sep)) + 1):
+			var along := a * sep + (ScatterMath.hash01(a, c, 1, 0) - 0.5) * 0.5 * sep
+			var across := c * sep + (ScatterMath.hash01(a, c, 1, 7) - 0.5) * 0.5 * sep
+			var pt := center + Vector2(across, along)
+			if absf(along) <= half_len and absf(across) <= half_width and not ScatterMath.on_road(pt, road):
+				cands.append(pt)
+	cands.sort_custom(func(u: Vector2, v: Vector2) -> bool:
+		return ScatterMath.hash01(int(u.x * 16), int(u.y * 16), 1, 9) < ScatterMath.hash01(int(v.x * 16), int(v.y * 16), 1, 9))
+	var out := PackedVector2Array()
+	for i in mini(count, cands.size()):
+		out.append(cands[i])
+	return out

@@ -325,7 +325,7 @@ func _resolve_terrain() -> Node:
 #    both starts a slew and eventually arrests it, instead of spinning it indefinitely.
 #  - The coefficient is divided by the car's WHEEL COUNT, so with all four wheels equally
 #    buried the total force is identical to the single central force this replaced. The
-#    change is therefore purely about asymmetry — snow_deep_drag keeps its existing
+#    change is therefore purely about asymmetry — deep_snow_drag keeps its existing
 #    meaning and needs no re-tuning. Dividing by the number of LIVE contacts instead would
 #    be wrong: lifting a wheel would then make the remaining ones bog harder.
 #

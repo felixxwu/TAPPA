@@ -230,13 +230,8 @@ var peak_torque_rpm := 4500.0
 @export var grass_grip := 0.7
 @export var gravel_grip := 1.0
 @export var tarmac_grip := 1.3
-## SNOW REGION (features/snow-region.md). A region may override the three μ scales
-## above for every stage tagged to it — the first case of a region influencing
-## HANDLING rather than only look. The region names these fields (it never authors
-## numbers), exactly as a WeatherLibrary condition does, so all tuning stays here.
-##
-## RegionLibrary.surface_grip_of resolves them. Every other region leaves those at the
-## authored baseline above, so this is an exact no-op elsewhere.
+## SNOW (features/snow-region.md). LevelView.set_snow blends the three μ scales above
+## toward these by how much snow is under the car.
 ##
 ## Keep the grass < gravel < tarmac ordering; snow drops all three well below home.
 @export var snow_grass_grip := 0.45
@@ -287,16 +282,6 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## small-model-readiness loop shipped a wet-weather tyre with all three of these correct and no
 ## rain grip at all, five test files green. Guarded by test_upgrade_library.gd ->
 ## test_every_authored_effect_key_is_registered_in_the_effects_table.
-## Deep snow at the roadside — the snow equivalent of grass. Two effects doing two
-## different jobs: the low grip above makes the car SLIDE, this makes it BOG.
-## Neither alone reads as deep snow.
-##
-## Linear drag coefficient applied to the chassis while off-road, feathered by the
-## same road weight the visual raise uses so the bog appears exactly where the snow
-## is drawn. Player-only: no drag term exists in the lap-time model (a rival never
-## drives off the road), so this is a small residual difficulty edge on top of the
-## scaled grip — the same asymmetry storm's crosswind has, and deliberate.
-@export var snow_deep_drag := 1000.0
 ## Metres the VISUAL ground is drawn above the collision surface off-road, so the car
 ## visibly sinks in. Collision is untouched, so the wheels rest at true ground level.
 ## Applied in level_ground.gdshader's vertex stage, so the road itself is never raised. Props are not lifted with it,
@@ -547,8 +532,7 @@ func has_forced_induction() -> bool:
 # full), and holding the `nitrous` action multiplies delivered crank torque while the
 # tank drains. Deliberately NOT part of effective_meta / power-to-weight, so fitting
 # nitrous can never move a car's rally eligibility — it makes events easier, it is not
-# a stat. See features/nitrous.md. (todo/star-gated-special-events.md, cited here, is
-# deleted — todo/roguelike-pivot.md decision 44.)
+# a stat. See features/nitrous.md.
 
 ## Extra torque fraction while nitrous is held — delivered torque is multiplied by
 ## (1.0 + this). 0 = no nitrous fitted. The upgrade ladder raises this ("harder").
@@ -1029,8 +1013,6 @@ func has_nitrous() -> bool:
 ## wet stage (weather == WeatherLibrary.WEATHER_RAIN). Applied by the weather look
 ## override, layered after the region look so rain wins. See features/weather.md.
 @export var rain_background_color := Color(0.55, 0.55, 0.58)
-## Dimmer, cooler ambient sky colour (upward-facing surfaces) on a wet stage.
-@export var rain_sky_color := Color(0.4, 0.4, 0.44)
 ## Knocks the sun back on a wet stage — scales sun energy.
 @export var rain_sun_energy_mult := 0.6
 ## Thickens the haze on a wet stage — scales fog_density.
@@ -1038,19 +1020,15 @@ func has_nitrous() -> bool:
 ## How far the fog tints the sky on a wet stage (overrides fog_sky_affect so the
 ## panorama washes out into a featureless overcast dome instead of punching through).
 @export var rain_fog_sky_affect := 0.9
-## Darkens the road/ground albedo on a wet stage (multiplies the ground/road colour).
-@export var rain_road_darken := 0.75
 ## Rain quads alive at once in the camera-parented particle system on a wet stage.
 ## Only instantiated when wet, so a dry stage carries zero added per-frame cost.
 @export var rain_particle_count := 600
 
 ## Flat dusty-tan background/fog colour on a sandstorm stage (weather ==
-## WeatherLibrary.WEATHER_SANDSTORM, authored only onto region == "greece" events).
+## WeatherLibrary.WEATHER_SANDSTORM).
 ## Applied by the same weather look override as rain, layered after the region
 ## look. See features/weather.md.
 @export var sand_background_color := Color(0.72, 0.6, 0.42)
-## Warm, muted ambient sky colour (upward-facing surfaces) on a sandstorm stage.
-@export var sand_sky_color := Color(0.6, 0.5, 0.35)
 ## Knocks the sun back on a sandstorm stage — scales sun energy.
 @export var sand_sun_energy_mult := 0.7
 ## Thickens the haze on a sandstorm stage — scales fog_density.
@@ -1058,14 +1036,6 @@ func has_nitrous() -> bool:
 ## How far the fog tints the sky on a sandstorm stage (overrides fog_sky_affect so
 ## the panorama washes out into a featureless dust haze instead of punching through).
 @export var sand_fog_sky_affect := 0.9
-## Tints the road/ground albedo toward the dust colour on a sandstorm stage
-## (lerped onto the ground/road colour, unlike rain's plain darkening multiply).
-@export var sand_road_tint := 0.4
-## The dust colour the road/ground albedo is LERPED toward on a sandstorm stage (by
-## sand_road_tint). Named by the condition's road_tint block in WeatherLibrary, so
-## the tint colour is authored data like every other weather value rather than a
-## literal in code — a future condition tinting toward snow-white needs no code.
-@export var sand_road_tint_color := Color(0.62, 0.5, 0.32)
 ## Global tyre μ multiplier on a sandstorm stage (Drivetrain.surface_tire_params),
 ## applied the same way as rain_grip_mult.
 @export var sand_grip_mult := 0.9
@@ -1088,13 +1058,11 @@ func has_nitrous() -> bool:
 # Prefixed `mist_` rather than `fog_` purely to avoid colliding with the BASE
 # environment knobs `fog_density` / `fog_sky_affect` above, which every stage uses.
 # Fog is a VISIBILITY condition only: it authors NO grip multiplier (so μ is exactly
-# 1.0, as dry) and NO road tint (a foggy road is dry). See features/weather.md.
+# 1.0, as dry). See features/weather.md.
 ## Pale, LUMINOUS grey used as background_color / fog_light_color / horizon on a
 ## foggy stage. Deliberately BRIGHTER than rain's flat overcast — mist glows; the
 ## common mistake is authoring it dark enough to read as dusk.
 @export var mist_background_color := Color(0.86, 0.87, 0.88)
-## Bright, near-white ambient sky colour (upward-facing surfaces) on a foggy stage.
-@export var mist_sky_color := Color(0.78, 0.79, 0.82)
 ## Sun energy on a foggy stage. Barely reduced — diffuse glare is what sells mist,
 ## so this stays near 1.0 while the density does the work.
 @export var mist_sun_energy_mult := 0.95
@@ -1105,23 +1073,19 @@ func has_nitrous() -> bool:
 @export var mist_fog_sky_affect := 0.95
 
 # --- Storm (weather == WeatherLibrary.WEATHER_STORM) ----------------------------
-# Rain's look and rain's particle kind, authored heavier, plus a crosswind and an
-# occasional lightning flash. See features/weather.md.
+# Rain's look and rain's particle kind, authored heavier, plus a crosswind. See
+# features/weather.md.
 ## Global tyre μ multiplier on a storm stage — a storm is wetter than plain rain, so
 ## this is normally the lower of the two. Applied exactly like rain_grip_mult.
 @export var storm_grip_mult := 0.72
 ## Flat, dark storm-grey background/fog colour on a storm stage.
 @export var storm_background_color := Color(0.42, 0.43, 0.47)
-## Dim, cool ambient sky colour (upward-facing surfaces) on a storm stage.
-@export var storm_sky_color := Color(0.3, 0.31, 0.36)
 ## Knocks the sun back on a storm stage — heavier than rain's.
 @export var storm_sun_energy_mult := 0.45
 ## Thickens the haze on a storm stage — scales fog_density.
 @export var storm_fog_density_mult := 2.2
 ## How far the fog tints the sky on a storm stage.
 @export var storm_fog_sky_affect := 0.95
-## Darkens the road/ground albedo on a storm stage (a soaked road, darker than rain's).
-@export var storm_road_darken := 0.65
 ## Rain quads alive at once on a storm stage — heavier downpour than plain rain.
 @export var storm_particle_count := 1000
 ## Base lateral crosswind on a storm stage: an ABSOLUTE force in newtons, applied to
@@ -1139,17 +1103,6 @@ func has_nitrous() -> bool:
 ## so this is authored well above foliage_wind_strength. See scripts/wind_sway.gd;
 ## purely cosmetic, so it is not part of the wind body-force block above.
 @export var storm_foliage_wind_strength := 0.11
-## Peak brightness multiplier of a lightning flash, applied to the storm fog/sky
-## colour for storm_lightning_duration_s. Purely cosmetic (no light node exists —
-## see features/rendering.md). Keep it modest: a flash that blanks the screen
-## mid-corner is a gameplay event, not an effect.
-@export var storm_lightning_flash := 1.45
-## How long one flash takes to rise and fall, in seconds. Short.
-@export var storm_lightning_duration_s := 0.18
-## Shortest gap between flashes, in seconds.
-@export var storm_lightning_interval_min_s := 18.0
-## Longest gap between flashes, in seconds. Infrequent on purpose.
-@export var storm_lightning_interval_max_s := 45.0
 ## Headlight-cone strength on a storm stage, 0..1 — the same knob night uses
 ## (night_headlight_amount), named by the storm entry's `headlights` key. A storm is
 ## dark enough that a driver would switch the lights on, but it is NOWHERE NEAR as
@@ -1160,28 +1113,21 @@ func has_nitrous() -> bool:
 @export var storm_headlight_amount := 0.35
 
 ## SNOWFALL (features/weather.md). Prefixed `snowfall_` rather than `snow_` so it
-## cannot collide with the snow REGION's `snow_*_grip` block above — the same
+## cannot collide with the `snow_*_grip` block above — the same
 ## collision-avoidance that made fog's fields `mist_*`.
 ##
-## Deliberately authors NO grip multiplier. The snow region already owns grip in the
-## corner these stages sit in; a weather multiplier on top would be a second, redundant
-## lever over the same variable, and would make a snowfall stage arbitrarily slipperier
-## than a dry one in the same region.
+## Deliberately authors NO grip multiplier: LevelView.set_snow already sets grip from
+## the snow under the car, so a weather multiplier on top would be a second lever.
 ##
 ## Flat, bright overcast: like fog, the common mistake is authoring snow dark enough to
 ## read as dusk. It is a WHITE-OUT, so these stay light.
 @export var snowfall_background_color := Color(0.78, 0.80, 0.84)
-@export var snowfall_sky_color := Color(0.82, 0.84, 0.88)
 ## Barely knocked back — a snowy sky is bright, the diffuse glare is the point.
 @export var snowfall_sun_energy_mult := 0.85
 ## Thickens the haze into falling-snow murk. Between rain's and fog's.
 @export var snowfall_fog_density_mult := 4.0
 ## High, so the panorama washes into a featureless white dome.
 @export var snowfall_fog_sky_affect := 0.9
-## Fresh snow SETTLES white on the road, so this lerps the albedo toward a colour
-## (like sandstorm's dust caking) rather than darkening it the way rain does.
-@export var snowfall_road_tint := 0.35
-@export var snowfall_road_tint_color := Color(0.88, 0.90, 0.93)
 ## Flakes alive at once in the camera-parented field; only built on a snowfall stage.
 @export var snowfall_particle_count := 1800
 ## Metres per second the flakes fall. Much slower than rain — this, more than the
@@ -1191,25 +1137,21 @@ func has_nitrous() -> bool:
 @export var snowfall_wind_dir_deg := 200.0
 
 # --- Night (weather == WeatherLibrary.WEATHER_NIGHT) ----------------------------
-# A DARK stage re-lit only by a fake headlight cone in front of the player's car
-# (todo/night-weather-and-headlights.md). Two halves:
-#   1. The LOOK block below — the same five environment knobs every other condition
+# A DARK stage re-lit only by a fake headlight cone in front of the player's car.
+# Two halves:
+#   1. The LOOK block below — the same four environment knobs every other condition
 #      authors. The darkening comes entirely from night_sun_energy_mult, which scales
 #      the sun the terrain bakes into its vertex colours; no shader darkens anything.
 #   2. The CONE fields — pushed to the shaders as global shader parameters. Its SHAPE
 #      (colour, range, angles, offset, pitch, separation) is shared by every condition
 #      that switches the lights on and is not in the weather table at all; only its
 #      STRENGTH is per-condition, named by the table's `headlights` key.
-# Night authors no grip multiplier and no wind: it is purely a look, so it changes no
-# lap time. See features/weather.md.
+# Night authors no grip multiplier and no wind: it is purely a look. See
+# features/weather.md.
 ## Near-black background / fog / horizon colour on a night stage. Not pure black —
 ## a slight blue lift keeps the horizon from reading as a hole in the frame, and the
 ## PS1 post-process quantises hard down here (banding is the known risk).
 @export var night_background_color := Color(0.07, 0.08, 0.14, 1)
-## Very dim, cool ambient sky colour (upward-facing surfaces) on a night stage. This
-## is the floor everything outside the headlight cone is lit by, so it must not be
-## zero or unlit geometry becomes an unreadable silhouette.
-@export var night_sky_color := Color(0.2, 0.22, 0.3, 1)
 ## Sun energy on a night stage. THE dominant knob: this is what actually makes the
 ## world dark, and the cone's additive re-lighting is only readable against a low
 ## value here. Its range starts at 0.0 (unlike the daytime conditions, which never
@@ -1222,9 +1164,6 @@ func has_nitrous() -> bool:
 ## How far the fog tints the sky on a night stage. High, so the panorama sinks into
 ## the dark rather than punching a lit horizon through it.
 @export var night_fog_sky_affect := 0.9
-## Darkens the road/ground albedo on a night stage (albedo × amount, like rain's — a
-## night road is not tinted toward a new colour, just unlit).
-@export var night_road_darken := 0.5
 ## The sky panorama a night stage swaps in, overriding whatever the REGION chose.
 ## Named by the night entry's `sky_panorama` key in WeatherLibrary, so a condition
 ## that wants its own sky is authored data rather than a branch in code. Empty

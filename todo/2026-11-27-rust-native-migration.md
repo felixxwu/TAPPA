@@ -28,7 +28,7 @@ spec items still applies.
 - [x] 0.2 Remove Google and password sign-in (2026-11-28)
 - [x] 0.3 Email link sign-in (2026-11-28)
 - [x] 0.4 Account deletion (2026-11-28)
-- [ ] 0.5 Cloud tests against the Firebase emulators (in progress: 6/6 pass locally 2026-11-28; the CI job has not run on GitHub yet)
+- [x] 0.5 Cloud tests against the Firebase emulators (2026-11-28)
 - [ ] 0.6 iOS export
 - [ ] **Exit:** live on the App Store and Cloudflare Pages; sign-in and deletion work everywhere
 
@@ -714,7 +714,10 @@ recorded once.
 5. **Cloud tests against the Firebase emulators.** Run the sign-in, sync and deletion tests in CI
    against the Firebase Auth and Firestore emulators, not just fakes, so they exercise the real REST
    API and `firestore.rules`. Phase 5 runs the same scripted scenarios against the Rust version.
-6. **Add an iOS export.** Godot's iOS export with `gl_compatibility` (OpenGL ES 3 on iOS) gets the
+6. **Add an iOS export.** *(in progress: code done 2026-11-28 — `preset.4` "iOS", `build_ios.sh`, the
+   `export-ios` TestFlight job, safe areas in `DisplayStretch`, no update check on iOS; needs the Apple
+   Developer account, certificate, profile, App Store Connect app + listing and the GitHub secrets — see
+   `features/release-pipeline.md` → *One-off Apple setup*)* Godot's iOS export with `gl_compatibility` (OpenGL ES 3 on iOS) gets the
    game onto iPhones now. This step also sets up everything the Rust iOS build will reuse:
    - signing certificates, provisioning profile and the bundle ID;
    - macOS CI runners and the TestFlight upload;

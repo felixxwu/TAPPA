@@ -38,12 +38,10 @@ func test_dry_grip_multiplier_is_exactly_one() -> void:
 
 
 func test_dry_constructs_nothing() -> void:
-	# The zero-cost contract: dry names no look block, no road tint and no particle
-	# kind, so LevelView.apply_weather writes nothing and builds nothing on a
+	# The zero-cost contract: dry names no look block and no particle kind, so LevelView.apply_weather writes nothing and builds nothing on a
 	# dry level. This is a hard requirement on the low-end phones the game targets.
 	var dry := WeatherLibrary.by_id(WeatherLibrary.DEFAULT_ID)
 	assert_true((dry.get("look", {}) as Dictionary).is_empty(), "dry authors no look block")
-	assert_true((dry.get("road_tint", {}) as Dictionary).is_empty(), "dry tints no road")
 	assert_eq(String(dry.get("particles", "")), "", "dry spawns no particle field")
 	assert_eq(WeatherLibrary.headlight_amount(GameConfig.new(), WeatherLibrary.DEFAULT_ID), 0.0,
 		"and switches no headlights on")
@@ -88,13 +86,12 @@ func test_config_fields_lists_every_field_an_entry_references() -> void:
 		"id": "synthetic",
 		"grip_mult": "g", "particles": "rain", "particle_count": "c", "wind_dir": "w",
 		"look": {
-			"background_color": "bg", "sky_color": "sky", "sun_energy_mult": "sun",
+			"background_color": "bg", "sun_energy_mult": "sun",
 			"fog_density_mult": "fd", "fog_sky_affect": "fs",
 		},
-		"road_tint": {"amount": "rt", "color": "rc"},
 		"headlights": "hl",
 	})
-	for expected in ["g", "c", "w", "bg", "sky", "sun", "fd", "fs", "rt", "rc", "hl"]:
+	for expected in ["g", "c", "w", "bg", "sun", "fd", "fs", "hl"]:
 		assert_true(fields.has(expected), "%s is reported as a config field" % expected)
 	assert_false(fields.has("rain"), "the particle KIND is not a config field")
 
@@ -106,24 +103,21 @@ func test_config_fields_is_empty_for_a_featureless_entry() -> void:
 
 # --- visibility-only conditions (fog's shape) --------------------------------
 
-func test_a_visibility_only_condition_has_no_grip_no_particles_and_no_road_tint() -> void:
+func test_a_visibility_only_condition_has_no_grip_and_no_particles() -> void:
 	# Fog's SHAPE, asserted against a synthetic table so no shipped colour or
 	# multiplier is pinned: a condition may author a look block ALONE. That single
 	# fact is what makes it a pure visibility condition —
 	#   * no "grip_mult"  => grip_mult() is exactly 1.0, identical to dry, so the
 	#     player's tyres are untouched;
 	#   * no "particles"  => LevelView builds no WeatherField at all (the case the
-	#     table was generalised for — it costs no new code);
-	#   * no "road_tint"  => the road albedo is left alone, unlike a precipitation
-	#     condition, which is correct because a foggy road is DRY.
-	# The precipitation sibling in the same table is the contrast: it authors all
-	# three, so this asserts a RELATION between two shapes, not any value.
+	#     table was generalised for — it costs no new code).
+	# The precipitation sibling in the same table is the contrast: it authors both, so this asserts a RELATION between two shapes, not any value.
 	WeatherLibrary.override_for_test([
 		{"id": "dry"},
 		{
 			"id": "haze",
 			"look": {
-				"background_color": "mist_background_color", "sky_color": "mist_sky_color",
+				"background_color": "mist_background_color",
 				"sun_energy_mult": "mist_sun_energy_mult",
 				"fog_density_mult": "mist_fog_density_mult",
 				"fog_sky_affect": "mist_fog_sky_affect",
@@ -132,7 +126,6 @@ func test_a_visibility_only_condition_has_no_grip_no_particles_and_no_road_tint(
 		{
 			"id": "squall", "grip_mult": "rain_grip_mult", "particles": "rain",
 			"particle_count": "rain_particle_count",
-			"road_tint": {"amount": "rain_road_darken"},
 		},
 	] as Array[Dictionary])
 	var cfg := GameConfig.new()
@@ -143,16 +136,12 @@ func test_a_visibility_only_condition_has_no_grip_no_particles_and_no_road_tint(
 	assert_eq(WeatherLibrary.grip_mult(cfg, "haze"), 1.0,
 		"a visibility-only condition does not scale grip — exactly dry")
 	assert_eq(String(haze.get("particles", "")), "", "it constructs no particle field")
-	assert_true((haze.get("road_tint", {}) as Dictionary).is_empty(),
-		"it does not tint the road")
-	# The contrast, in the same table: precipitation does all three.
+	# The contrast, in the same table: precipitation does both.
 	assert_lt(WeatherLibrary.grip_mult(cfg, "squall"), 1.0, "precipitation does scale grip")
 	assert_ne(String(squall.get("particles", "")), "", "precipitation constructs a field")
-	assert_false((squall.get("road_tint", {}) as Dictionary).is_empty(),
-		"precipitation does tint the road")
 
 
-# --- wind and lightning blocks -----------------------------------------------
+# --- wind blocks -----------------------------------------------------------
 
 func test_config_fields_reports_a_shared_field_once() -> void:
 	# One entry may legitimately point two keys at the same config field (a wind
@@ -178,11 +167,6 @@ func test_a_wind_block_names_only_config_fields_that_exist() -> void:
 			if wind.has(key):
 				assert_true(cfg.get(String(wind[key])) != null,
 					"%s names a real GameConfig field" % String(wind[key]))
-		var lightning: Dictionary = entry.get("lightning", {})
-		for key in WeatherLibrary.LIGHTNING_KEYS:
-			if lightning.has(key):
-				assert_true(cfg.get(String(lightning[key])) != null,
-					"%s names a real GameConfig field" % String(lightning[key]))
 		var foliage_wind_field := String(entry.get("foliage_wind", ""))
 		if foliage_wind_field != "":
 			assert_true(cfg.get(foliage_wind_field) != null,

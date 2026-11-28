@@ -14,7 +14,7 @@ func test_place_inside_radius_off_road_and_clear() -> void:
 		for cz in range(-4, 4):
 			road[Vector2i(cx, cz)] = true
 	var obstacle := Vector2(10, 10)
-	var grid := SpectatorScatter.build_point_grid(PackedVector2Array([obstacle]), 2.0)
+	var grid := SpatialGrid.of_points(PackedVector2Array([obstacle]), 2.0)
 	var centre := Vector2(0, 0)
 	var pts := LevelSpectators.place(centre, 20.0, 30, 1.0, road, grid, 2.0, 2.0, 5)
 	assert_gt(pts.size(), 0)

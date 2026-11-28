@@ -70,7 +70,8 @@ func place(controls: MobileControls) -> void:
 	var screen := get_viewport().get_visible_rect().size
 	var home := home_rect(screen)
 	size = home.size
-	position = home.position + Vector2(0.0, MobileControls.bottom_band_lift(controls, screen))
+	position = home.position + Vector2(0.0, MobileControls.bottom_band_lift(controls, screen)) \
+		+ DisplayStretch.safe_shift(Vector2(0.0, 1.0))
 
 
 # Where the minimap sits with no touch controls in the way.

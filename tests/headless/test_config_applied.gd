@@ -139,10 +139,8 @@ func test_speed_lines_config_defaults_present() -> void:
 
 # --- Wiring of the promoted tuning clusters --------------------------------------------------
 #
-# Clusters of tuning constants moved out of scripts and into GameConfig (the overworld fog
-# frontier, the HQ present box, the loading frame caps). The rival pace / field cluster that
-# used to be listed here is deleted along with the rival field
-# (todo/roguelike-pivot.md decision 5). What needs guarding is the WIRING: the code must read the config field, not the
+# Clusters of tuning constants moved out of scripts and into GameConfig (the loading frame
+# caps). What needs guarding is the WIRING: the code must read the config field, not the
 # literal. Every test below sets a SYNTHETIC value and asserts the behaviour follows it —
 # never the authored number, which is a designer's to retune.
 #
@@ -180,8 +178,3 @@ func test_loading_cap_reads_the_config_fields() -> void:
 	assert_eq(WorldRuntime.loading_cap(false), 123, "the non-touch cap comes from loading_max_fps")
 	assert_eq(WorldRuntime.loading_cap(true), 45, "the touch cap comes from loading_touch_max_fps")
 	_restore(previous)
-
-
-# The rival field's swap_weight / _pace_band / generate_opponent_field config wiring
-# used to be covered here. Deleted along with the rival field
-# (todo/roguelike-pivot.md decision 5).

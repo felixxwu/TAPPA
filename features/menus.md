@@ -75,7 +75,7 @@ a menu driven by bare letter keys took four things:
   cover the button, so this is sometimes the only way to submit at all.
   `virtual_keyboard_enabled` is on for Android/web.
 
-Note that **Space is both `ui_accept` and a legal password character**; the
+Note that **Space is both `ui_accept` and a legal character in a text field**; the
 focused field consumes it first, so typing wins. That is correct, but it is the
 thing to re-check by hand if the input map ever changes.
 

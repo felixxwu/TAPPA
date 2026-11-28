@@ -14,7 +14,7 @@ extends VBoxContainer
 #   * Enter submits rather than inserting a newline (LineEdit is single-line, so
 #     this is just the `text_submitted` signal).
 #
-# Note SPACE: ui_accept binds Space, and Space is a legal password character.
+# Note SPACE: ui_accept binds Space, and Space is a legal character in a field.
 # The focused LineEdit consumes it first, so typing wins over "press the focused
 # button" — the behaviour is correct, but it is the thing to re-check by hand if
 # the input map ever changes.
@@ -25,7 +25,7 @@ var line: LineEdit
 var _label: Label
 
 
-func _init(label_text: String, placeholder := "", secret := false) -> void:
+func _init(label_text: String, placeholder := "") -> void:
 	add_theme_constant_override("separation", UITheme.GAP_TIGHT)
 
 	_label = UITheme.label(label_text, "dim")
@@ -34,7 +34,6 @@ func _init(label_text: String, placeholder := "", secret := false) -> void:
 
 	line = LineEdit.new()
 	line.placeholder_text = placeholder
-	line.secret = secret
 	line.focus_mode = Control.FOCUS_ALL
 	line.custom_minimum_size = Vector2(UITheme.px(320), UITheme.MENU_ROW_H)
 	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -56,11 +55,6 @@ func set_text(value: String) -> void:
 
 func clear() -> void:
 	line.text = ""
-
-
-# Toggle a password field between hidden and visible.
-func set_secret(value: bool) -> void:
-	line.secret = value
 
 
 # Chain a column of focusable controls top-to-bottom so up/down walk them.

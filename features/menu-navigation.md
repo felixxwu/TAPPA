@@ -135,7 +135,7 @@ the title screen, the rest-stop page and the world pages (map, stats) — each c
   button, so this is sometimes the only way to submit at all. `virtual_keyboard_enabled` is
   on for Android/web.
 
-Note that **Space is both `ui_accept` and a legal password character**; the focused field
+Note that **Space is both `ui_accept` and a legal character in a text field**; the focused field
 consumes it first, so typing wins. Covered by `tests/headless/test_text_field.gd`.
 
 ## A third pattern: the single-action screen

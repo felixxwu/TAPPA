@@ -10,8 +10,7 @@ extends RefCounted
 # boot, or on a background sync) emitted into nothing, and cloud_sync then refused
 # every subsequent push with "Resolve the sync conflict first." So cloud saving
 # silently stopped, with the only thing that could clear it hidden behind a page
-# the player had no reason to visit. See todo/challenge-career-reuse-drift.md
-# item 10.
+# the player had no reason to visit.
 #
 # A conflict is not a page's business — it is the game's. Any screen that can host
 # a ConfirmPopup can raise it through here, and they all get the same copy, the
@@ -90,4 +89,3 @@ static func _resolve(host: Node, busy_text: String, action: Callable) -> Diction
 
 static func _keep_local() -> Dictionary:
 	return await Cloud.resolve_keep_local()
-

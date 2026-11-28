@@ -6,6 +6,7 @@ name: Release
 #   - export-android  -> itch.io (sideloadable .apk)
 #   - export-windows  -> itch.io (.exe)
 #   - publish-play    -> Google Play Console (.aab)
+#   - export-ios      -> TestFlight (.ipa; skipped until vars.APPLE_TEAM_ID is set)
 #   - deploy-rules    -> Firestore security rules (only when they change)
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
@@ -21,6 +22,10 @@ name: Release
 #                                Firebase project, role "Firebase Rules Admin".
 #                                A DIFFERENT key from PLAY_SERVICE_ACCOUNT_JSON
 #                                (different project, far narrower permissions).
+#   IOS_DIST_CERT_P12_B64 / IOS_DIST_CERT_PASSWORD, IOS_PROVISIONING_PROFILE_B64,
+#   APP_STORE_CONNECT_KEY_ID / _ISSUER_ID / _KEY_P8_B64 - export-ios; plus the
+#                                APPLE_TEAM_ID repository VARIABLE that switches it on.
+#                                See features/release-pipeline.md -> iOS and TestFlight.
 #
 # NOTE ON THE FIRST PLAY RELEASE: the Play Developer API refuses the very first
 # upload for a brand-new app. You must upload one build by hand in the Play
@@ -427,6 +432,99 @@ jobs:
             --skip_upload_metadata true \
             --skip_upload_images true \
             --skip_upload_screenshots true
+
+  export-ios:
+    name: Export iOS & upload to TestFlight
+    runs-on: macos-15
+    needs: compile-check
+    # Off until the Apple account exists: setting the APPLE_TEAM_ID repository variable
+    # (with the secrets below) switches it on. Job conditions can't read secrets, which
+    # is why the switch is a variable — a team ID isn't secret anyway.
+    if: vars.APPLE_TEAM_ID != ''
+    concurrency:
+      group: testflight-upload
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Full history: the iOS build number is the commit count and must rise every upload.
+          fetch-depth: 0
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (macOS) + export templates
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_macos.universal.zip"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o templates.tpz "${BASE}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip -d "$RUNNER_TEMP"
+          echo "GODOT=$RUNNER_TEMP/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_ENV"
+          TPL="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$TPL"
+          unzip -q templates.tpz
+          mv templates/* "$TPL/"
+          "$RUNNER_TEMP/Godot.app/Contents/MacOS/Godot" --version
+
+      - name: Install the signing certificate and provisioning profile
+        env:
+          IOS_DIST_CERT_P12_B64: ${{ secrets.IOS_DIST_CERT_P12_B64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_B64 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$IOS_DIST_CERT_P12_B64" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$IOS_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          PROFILE="$RUNNER_TEMP/profile.mobileprovision"
+          echo "$IOS_PROVISIONING_PROFILE_B64" | base64 -d > "$PROFILE"
+          UUID="$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin <<< "$(security cms -D -i "$PROFILE")")"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "GODOT_APPLE_PLATFORM_PROVISIONING_PROFILE_UUID_RELEASE=$UUID" >> "$GITHUB_ENV"
+
+      - name: Import project (build resource cache)
+        run: |
+          printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
+          "$GODOT" --headless --import --quit || true
+
+      - name: Fetch level bakes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: tools/fetch_bakes.sh
+
+      - name: Export the .ipa (via build_ios.sh)
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          ./build_ios.sh
+          ls -la build/ios
+
+      - name: Upload the .ipa as a workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: tappa-ipa
+          path: build/ios/tappa.ipa
+          if-no-files-found: error
+
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_P8_B64: ${{ secrets.APP_STORE_CONNECT_KEY_P8_B64 }}
+        run: |
+          set -euo pipefail
+          # altool looks for the API key under this exact name and folder.
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          echo "$ASC_KEY_P8_B64" | base64 -d > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          xcrun altool --upload-app --type ios --file build/ios/tappa.ipa \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 
   deploy-pages:
     name: Deploy /docs to GitHub Pages

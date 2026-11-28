@@ -5,7 +5,7 @@ One workflow — `.github/workflows/deploy.yml`, named **Release** — runs on e
 push to `main` (plus `workflow_dispatch`), and it is the only thing that ships:
 there is no manual upload step in the normal loop.
 
-**Tests:** `tests/headless/test_update_check.gd`
+**Tests:** `tests/headless/test_update_check.gd`, `tests/headless/test_export_presets.gd`
 
 ## Jobs
 
@@ -16,6 +16,7 @@ there is no manual upload step in the normal loop.
 | `export-android` | Export & deploy Android APK | itch.io channel `android` (sideload) |
 | `export-windows` | Export & deploy Windows .exe | itch.io channel `windows` |
 | `publish-play` | Build AAB & upload to Play | Google Play, track from `env.TRACK` |
+| `export-ios` | Export iOS & upload to TestFlight | TestFlight (macOS runner; **skipped until the `APPLE_TEAM_ID` variable is set**) |
 | `deploy-pages` | Deploy /docs to GitHub Pages | GitHub Pages (a redirect to the game + `version.json`, *not* the game) |
 | `deploy-rules` | Deploy Firestore rules | Firebase, only when the rules changed |
 
@@ -175,6 +176,14 @@ them too.
 | `ANDROID_KEYSTORE_B64` / `ANDROID_KEYSTORE_PASSWORD` | `export-android`, `publish-play` |
 | `PLAY_SERVICE_ACCOUNT_JSON` | `publish-play` |
 | `FIREBASE_SERVICE_ACCOUNT` | `deploy-rules` (a *different* project + far narrower role) |
+| `IOS_DIST_CERT_P12_B64` / `IOS_DIST_CERT_PASSWORD` | `export-ios` (the Apple Distribution certificate + private key, as a base64 `.p12`) |
+| `IOS_PROVISIONING_PROFILE_B64` | `export-ios` (the App Store provisioning profile for `tappa.game`, base64) |
+| `APP_STORE_CONNECT_KEY_ID` / `APP_STORE_CONNECT_ISSUER_ID` / `APP_STORE_CONNECT_KEY_P8_B64` | `export-ios` (an App Store Connect API key, role *App Manager*, for the TestFlight upload) |
+
+Plus one **repository variable** (the *Variables* tab, not *Secrets*): `APPLE_TEAM_ID`,
+the 10-character team ID. It is the on-switch for `export-ios` — a job's `if:` can't
+read secrets, so the job runs only when this variable is set, and CI stays green
+until the Apple account exists.
 
 `export-android` falls back to an ephemeral keystore when the secret is absent
 (with a warning — the APK signature then changes every build, forcing an
@@ -201,6 +210,57 @@ built into the action. `fastlane supply` is the actively-maintained tool most
 teams migrate to for this exact failure mode. There is no drop-in official
 Google Actions replacement — `google-github-actions/upload-google-play` does
 not exist, despite sounding like it should.
+
+## iOS and TestFlight
+
+`export-ios` runs on a `macos-15` runner (Xcode is needed to sign and archive), installs
+the macOS Godot editor and the export templates, imports the signing certificate into a
+throwaway keychain and the provisioning profile into `~/Library/MobileDevice`, then
+runs `./build_ios.sh` and uploads `build/ios/tappa.ipa` with `xcrun altool` using the App
+Store Connect API key. The `.ipa` is also kept as a workflow artifact.
+
+- **The preset** is `preset.4` "iOS" in `export_presets.cfg`: bundle ID `tappa.game`
+  (the same id as the Play package), iPhone only, App Store export method for release.
+  The renderer is the project-wide `gl_compatibility` (OpenGL ES 3 on iOS).
+- **No account details are committed.** The team ID is stamped into the preset by
+  `build_ios.sh` from `APPLE_TEAM_ID`; Godot reads the profile UUID from
+  `GODOT_APPLE_PLATFORM_PROVISIONING_PROFILE_UUID_RELEASE`, which the signing step sets.
+- **Versions.** Apple only takes dotted numbers, so `build_ios.sh` stamps
+  `application/short_version = 0.<commit count>` and `application/version = <commit
+  count>` (the build number, which must rise with every upload) — the same count every
+  other build uses.
+- **Privacy manifest.** Godot writes `PrivacyInfo.xcprivacy` from the preset's
+  `privacy/*` options: email address and user ID are collected, linked to the player,
+  for app functionality (cloud save, [cloud-save.md](cloud-save.md)), not for tracking,
+  and tracking is off. The App Store Connect "App Privacy" answers must say the same.
+- **Export compliance.** `ITSAppUsesNonExemptEncryption = false` comes from Godot's own
+  iOS `Info.plist` template, so it isn't in `additional_plist_content` (a second copy
+  of the key would make the plist invalid). The game only uses HTTPS.
+- **No update prompt on iOS.** `UpdateCheck.applicable()` is false there — App Review
+  rejects an app that points at a download outside the App Store. See
+  [update-check.md](update-check.md).
+- **Safe areas** (notch, home indicator) are handled once for all UI by
+  `DisplayStretch` — see [rendering.md](rendering.md).
+
+### One-off Apple setup (by hand, once)
+
+1. Join the Apple Developer Program; note the **team ID** (Membership page).
+2. Certificates, Identifiers & Profiles: register the App ID **`tappa.game`** (no extra
+   capabilities needed); create an **Apple Distribution** certificate (export it with its
+   private key from Keychain Access as a `.p12` with a password); create an **App Store**
+   provisioning profile for `tappa.game` with that certificate.
+3. App Store Connect: create the app (bundle ID `tappa.game`, SKU of your choice), fill in
+   the listing, the **privacy policy URL**, the **App Privacy** answers (email address and
+   user ID; app functionality; linked to identity; no tracking), and the **age rating**
+   questionnaire. Add yourself as an internal TestFlight tester.
+4. Users and Access → Integrations → App Store Connect API: create a key with the **App
+   Manager** role; download the `.p8` (only offered once) and note the key ID and issuer ID.
+5. GitHub → Settings → Secrets and variables → Actions: add the secrets in the table above
+   (`base64 -i file | pbcopy` for the `_B64` ones), then the `APPLE_TEAM_ID` variable last
+   — that switches the job on.
+6. The App Store icon falls back to `icon.svg` (`application/config/icon`). Apple rejects
+   an App Store icon with transparency, so if the first upload is refused for that, set
+   `icons/app_store_1024x1024` in the preset to an opaque 1024×1024 PNG.
 
 ## Gotchas
 

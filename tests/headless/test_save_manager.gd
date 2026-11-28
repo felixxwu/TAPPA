@@ -52,7 +52,7 @@ func test_round_trip_survives_save_and_reload() -> void:
 	assert_almost_eq(float(_save.profile["cars"][0]["tuning"]["brake_bias"]), 0.55, 0.001, "tuning reloaded")
 
 
-# --- Money (todo/roguelike-pivot.md decision 21) -------------------------------
+# --- Money ---------------------------------------------------------------------
 #
 # No amounts are asserted — every payout in the game is a GameConfig tunable. What is
 # pinned is the LEDGER's behaviour, which must hold whatever those numbers are.
@@ -74,10 +74,6 @@ func test_instance_ids_are_unique_per_grant() -> void:
 	assert_ne(a["instance_id"], b["instance_id"], "two instances of one model get distinct ids")
 	assert_eq(_save.profile["cars"].size(), 2, "both instances owned")
 
-
-# --- The meta shop: buying a car (todo/roguelike-pivot.md decision 28) -----------
-
-# --- The meta shop: boost levels (todo/roguelike-pivot.md decision 42) -----------
 
 func _rng(seed_value: int) -> RandomNumberGenerator:
 	var r := RandomNumberGenerator.new()
@@ -127,20 +123,6 @@ func test_a_refused_pre_pivot_profile_can_still_save_new_progress() -> void:
 	var on_disk: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TEST_PATH))
 	assert_eq((on_disk["cars"] as Array).size(), 1,
 		"the new car actually reached disk, superseding the refused pre-pivot file")
-
-
-# test_migration_v2_restores_full_power_to_detuned_cars and
-# test_migration_v1_strips_the_unbound_inventory DELETED: both drove
-# Save._migrate_step's per-version transforms (2 -> 3, 1 -> 2), which are deleted along
-# with the whole migration ladder (todo/roguelike-pivot.md decision 34) -- see
-# SCHEMA_VERSION's own comment for why a pre-pivot profile now resets instead of stepping
-# forward. test_sanitise_drops_the_retired_repair_kit_from_an_existing_profile below is
-# untouched -- it exercises _sanitise(), a separate, version-independent tolerant pass.
-
-
-# test_sanitise_drops_the_retired_repair_kit_from_an_existing_profile: DELETED — the
-# whole inventory subsystem is gone, so there is no live consumable to protect and the
-# retired-id strip went with it.
 
 
 func test_migration_backfills_missing_keys() -> void:
@@ -399,11 +381,7 @@ func test_adopting_a_profile_keeps_this_devices_settings() -> void:
 	assert_eq(_save.get_setting("probe_setting", ""), "this_device")
 
 
-# --- New-rally reveal: DELETED with the HQ map (no reveal parade exists to
-# acknowledge; the seeding tests went with _seed_reveals_if_needed).
-
-
-# --- Skills (todo/roguelike-pivot.md "Skills — a straight lift from RR") ----------
+# --- Skills ---------------------------------------------------------------------
 # Save-level purchase/equip mutators. The state-machine contract (locked/purchasable/
 # owned, the equip cap) belongs to test_skill_library.gd; this file only pins the
 # "a refused purchase leaves the profile byte-identical" rule every meta-shop
@@ -431,9 +409,6 @@ const _FX_SKILLS: Array[Dictionary] = [
 #
 # Derived from the source, so a field added tomorrow is covered without touching this test.
 # Keys the migration chain writes for its own bookkeeping are exempt by name below.
-# (The migration ladder itself is deleted -- todo/roguelike-pivot.md decision 34 -- so
-# nothing currently matches "schema_version" any more; kept as a harmless exemption in
-# case a future one-off transform writes it again the same way.)
 const PROFILE_KEY_WRITE_EXEMPT := [
 	"schema_version",
 ]

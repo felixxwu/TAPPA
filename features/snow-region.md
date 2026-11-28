@@ -1,7 +1,8 @@
 # The snow region (The Alps)
 
-The one region that does more than look different: it influences **handling**. On the Hafren
-level the snow is painted into the level's biome map, and the handling follows the snow under the car.
+Snow on the Hafren level changes **handling**, not just the look. It is painted into the
+level's biome map, and the handling follows the snow under the car. The `snow` region entry is
+only a look.
 
 **Tests:** `tests/headless/test_snow_region.gd`, `tests/headless/test_deep_snow_drag.gd`
 
@@ -17,16 +18,13 @@ level the snow is painted into the level's biome map, and the handling follows t
 
 1. **The look** is pure existing machinery — `LOOK_KEYS` only, no code.
 2. **Snowfall** is one `WeatherLibrary` entry plus one particle kind.
-3. **Grip** is the new axis: a region may now override per-surface μ.
+3. **Grip** follows the snow under the car: `LevelView.set_snow` blends per-surface μ toward the `snow_*_grip` values.
 4. **Deep snow** is the genuinely new mechanic.
 
-## Grip is a region property, not a weather one
+## Grip comes from the ground, not the weather
 
-The corner is a deliberate **mix of dry and snow stages**, and a *dry* alpine stage must
-still be slippery — the ground is frozen whether or not anything is falling on it.
-Weather is per-event; "this corner is frozen" is per-region. Routing grip through
-`WeatherLibrary` would have forced every Alps event to carry `weather: "snow"`, throwing
-away the variety the region exists to provide.
+Snowy ground must be slippery whether or not anything is falling on it, so grip follows
+the snow under the car and the snowfall weather authors no grip multiplier.
 
 **Nor is ice a new surface type.** There is no surface enum: `LevelView.surface_at`
 returns continuous weights (road 0..1, tarmac 0..1) and `Drivetrain._surface_blend`
@@ -36,35 +34,13 @@ would have meant a third weight axis through `surface_at`, the blend, `tire_mark
 and `wheel_particles` — and bought nothing, since snow-gravel and ordinary gravel never
 coexist on a stage.
 
-### The config-block indirection
-
-A region **names GameConfig fields**; it never authors numbers. Same pattern as
-`WeatherLibrary`, so all tuning stays in `scripts/game_config.gd`:
-
-```gdscript
-"surface_grip": {"grass": "snow_grass_grip", "gravel": "snow_gravel_grip",
-                 "tarmac": "snow_tarmac_grip"},
-"deep_snow":    {"depth": "snow_visual_depth_m", "drag": "snow_deep_drag"}
-```
-
-Both are **outside `LOOK_KEYS`**: they are handling, not look. `look_from` inheritance
-does not extend to them.
-
-API is `surface_grip_of` and `deep_snow_of`, each `{}` when the region
-authors nothing.
-
-`_resolve_fields` returns values **un-coerced**. An earlier version wrapped them in
-`float()` and crashed rally start with `Nonexistent 'float' constructor` the moment a
-block named a `Color`. It also warns when a block names a field `GameConfig` does not
-have, instead of silently yielding 0.0 — which would read as "no grip at all".
-
 ### Seating it
 
 `LevelView.set_snow` blends grip and deep-snow drag every physics tick between an untouched
 `GameConfig` baseline and the `snow_*_grip` / `level_snow_drag` values, by how much snow is under
 the car, so leaving the snow always lands back on baseline grip.
 
-### The region override is no longer the only snow lever
+### The tyre compound is the other snow lever
 
 Seating `snow_*_grip` scales the ground for every car equally, which is what makes snow
 *variety*. What the player brings now matters too: the **tyre compound is
@@ -73,7 +49,7 @@ compounds*), and Snow Tires buy a real bonus on snow ground for a penalty on tar
 fitting winter rubber before an Alps event, and taking it off again for an asphalt stage,
 is a genuine per-rally decision rather than a one-way upgrade. The snow side of the rule is
 keyed off `GameConfig.ground_is_snow()`, which is simply `deep_snow_depth_m > 0.0` — i.e.
-"this region seated a deep-snow block", so there is no second snow flag to keep in sync.
+"`LevelView.set_snow` seated deep snow under the car", so there is no second snow flag to keep in sync.
 
 ## Relief: deliberately gentle
 
@@ -138,7 +114,7 @@ things about it are load-bearing:
   slewing has its rotation damped too, so deep snow both starts a slide and eventually
   arrests it rather than spinning it forever.
 - **The coefficient is divided by the WHEEL COUNT**, so with all four wheels equally buried
-  the total is identical to the single central force this replaced — `snow_deep_drag`
+  the total is identical to the single central force this replaced — `deep_snow_drag`
   keeps its meaning and needed no re-tuning. Dividing by the number of *live* contacts
   would be wrong: lifting a wheel would make the remaining ones bog harder.
 - **No new terrain queries.** Each contact already carries the road weight
@@ -160,22 +136,20 @@ biome mask (`biomeRle`, 10 m cells), read by `LevelStreamer.snow_at`, and reuses
   mixes in `snow_texture` by `UV.x` (half as much on steep rock), lightens the gravel road toward white by `level_snow_road_lighten * UV.x` (and turns its moss to snow; `LevelView.snow_dust` lightens the dust puffs to match) and raises `VERTEX.y` by `snow_depth_m * UV.y`; `snow_depth_m` is
   `snow_visual_depth_m`. The collision is the separate trimesh built from the bake's heights, so the car sinks in.
 - **Map:** the level map (M) and minimap paint the mask's snow white and frost the trees in it (`LevelMap._paint_snow` / `snow_cell`, [level-editor.md](level-editor.md)).
-- **Handling:** `LevelView._physics_process` → `LevelView.set_snow` blends `grass/gravel/tarmac_grip` from their defaults to the `snow_*_grip` values by `snow_at(car)`, sets `deep_snow_drag` to `level_snow_drag * snow_at(car)` (its own value, lighter than free roam's `snow_deep_drag`), and sets `deep_snow_depth_m` past half snow so `ground_is_snow` gives snow tyres their bonus, and
-  `car.gd._apply_deep_snow_drag` feathers it off the road per wheel as in free roam. `_exit_tree` sets it back to 0.
+- **Handling:** `LevelView._physics_process` → `LevelView.set_snow` blends `grass/gravel/tarmac_grip` from their defaults to the `snow_*_grip` values by `snow_at(car)`, sets `deep_snow_drag` to `level_snow_drag * snow_at(car)`, and sets `deep_snow_depth_m` past half snow so `ground_is_snow` gives snow tyres their bonus, and
+  `car.gd._apply_deep_snow_drag` feathers it off the road per wheel. `_exit_tree` sets it back to 0.
 - Not carried over: ground cover tufts, which still grow in the snow.
 
 ## Snowfall
 
 One `WeatherLibrary` entry naming a `snowfall_*` config block — prefixed that way so it
-cannot collide with the region's `snow_*_grip` fields, the same reason fog's are `mist_*`.
+cannot collide with the `snow_*_grip` fields, the same reason fog's are `mist_*`.
 
-It **authors no `grip_mult`**. The region already owns grip in this corner; a weather
-multiplier on top would be a second, redundant lever over the same variable and would make
-a snowfall stage arbitrarily slipperier than a dry stage on the same frozen ground. It
-therefore changes no handling of its own.
+It **authors no `grip_mult`**: `LevelView.set_snow` already sets grip from the snow under the
+car, so a weather multiplier on top would be a second lever over the same variable
+(`test_snow_region.gd` guards this). It therefore changes no handling of its own.
 
-`road_tint.color` already generalises to a lerp toward a colour (sandstorm's mechanism), so
-snow settling white on the road needed no new code. The one code addition is
+The one code addition is
 `WeatherField.spawn_snow`: slow fall, wide spread, small near-square quads, and
 `BILLBOARD_ENABLED` rather than the velocity-aligned billboarding the other kinds use —
 streaking a flake to its own motion is exactly what makes cheap snow look like rain.
