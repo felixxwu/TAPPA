@@ -120,3 +120,38 @@ jobs:
         run: firebase emulators:exec --only auth,firestore --project tapparally "./run_tests.sh --emulator"
         env:
           GODOT: /usr/local/bin/godot
+
+  replay-determinism:
+    name: Golden replay determinism
+    runs-on: ubuntu-latest
+    # Two full headless replays of the Hafren drive, the second with every core busy.
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+
+      # Fresh checkouts have no imported assets, and the replay drives the baked Hafren level.
+      - name: Import project and fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
+          timeout 600 godot --headless --import --quit || true
+          tools/fetch_bakes.sh
+
+      # The recording (benchmark/runs/hafren.rec) is checked into git, so nothing else to fetch.
+      - name: Replay twice and compare the per-tick traces
+        run: ./run_level_replay.sh --golden-check --full
+        env:
+          GODOT: /usr/local/bin/godot

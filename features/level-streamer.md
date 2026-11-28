@@ -82,6 +82,10 @@ A square of ground is built by a resumable `ChunkJob` moving through stages:
 - **Boot:** `prefill()` builds everything with no budget (tests, tools). The game uses
   `prefill_async()`: `prefill_slice_ms` slices a frame apart behind the loading screen, then every
   cover tile in reach.
+- **Golden replays** (`Benchmark.golden`, features/benchmark.md): `prefill_async` runs `_run_all` and
+  `_settle_cover` with no awaits, so the frames before the replay never depend on machine speed; `_process`
+  drains the same way every frame instead of spending `budget_us`. `_now_us()` (used for `_plan_us`,
+  `wanted_us`, `_path_due` and `started_us`) returns `_clock_us`, the summed frame `delta`, instead of the wall clock.
 
 ## Threads
 

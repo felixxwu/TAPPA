@@ -29,7 +29,8 @@ All instances share it through one MultiMesh (one draw call). Nothing about the 
 changes after load.
 
 Variety and growth live in each instance's basis:
-- At emit, `_emit_puff` picks a random tumble (a random unit quaternion) times an
+- At emit, `_emit_puff` (drawing from its own `RngStreams.make("dust_puffs")`, see
+  [determinism.md](determinism.md)) picks a random tumble (a random unit quaternion) times an
   uneven per-axis stretch times an overall size spread, and stores that unit-size
   "birth shape" in `_shape` (9 floats per slot).
 - Every tick `_advance` writes `birth shape x size_at(t)` into the buffer, so a puff

@@ -115,9 +115,14 @@ func update(cam_pos: Vector3, car_pos: Vector3, free_view := false) -> void:
 		_queue_tiles_near(cam_pos)
 		PerfLog.track(&"trees_requeue", Time.get_ticks_usec() - ts)
 	var t0 := Time.get_ticks_usec()
-	_update_collision(car_pos)
+	var built := _update_collision(car_pos)
+	while built and Benchmark.golden:  # a golden replay builds every due hitbox and repack each frame
+		built = _update_collision(car_pos)
 	var t1 := Time.get_ticks_usec()
-	_pump(REPACKS_PER_FRAME)
+	if Benchmark.golden:
+		settle()
+	else:
+		_pump(REPACKS_PER_FRAME)
 	PerfLog.track(&"trees_collision", t1 - t0)
 	PerfLog.track(&"trees_pump", Time.get_ticks_usec() - t1)
 
@@ -433,8 +438,8 @@ func _tile_or_make(i: int) -> Tile:
 	return t
 
 
-# Collision exists only on tiles within level_tree_collision_m of the car, and goes once the car is twice as far; one tile is built per frame.
-func _update_collision(car_pos: Vector3) -> void:
+# Collision exists only on tiles within level_tree_collision_m of the car, and goes once the car is twice as far; one tile is built per call, and it returns whether it built one.
+func _update_collision(car_pos: Vector3) -> bool:
 	var near: float = Config.data.level_tree_collision_m
 	for t: Tile in _tiles.values():
 		if t.hit != null and _distance_to(t, car_pos) > near * 2.0:
@@ -448,7 +453,8 @@ func _update_collision(car_pos: Vector3) -> void:
 			var t0 := Time.get_ticks_usec()
 			_build_hitboxes(t)
 			PerfLog.track(&"trees_hitboxes", Time.get_ticks_usec() - t0)
-			return
+			return true
+	return false
 
 
 func _build_hitboxes(t: Tile) -> void:

@@ -98,6 +98,7 @@ var _rng := RandomNumberGenerator.new()
 var _drag_strength := 0.0         # fraction of horizontal speed a knock sheds (soft drag)
 var _sim_accum := 0.0             # delta banked since the last steered tick (decimation)
 var _sim_stagger := 0             # per-group tick phase, so groups don't all steer together
+var _ticks := 0                   # this group's own physics ticks, so pre-roll length can't shift the phase
 var _warm_mi: MeshInstance3D      # throwaway single-instance crowd mesh (ragdoll variant warm-up)
 
 
@@ -473,7 +474,8 @@ func _timed_physics_process(delta: float) -> void:
 	# change beyond a coarser (still smooth-at-speed) crowd update rate.
 	var interval: int = maxi(1, int(_p.get("sim_interval", 1)))
 	_sim_accum += delta
-	if interval > 1 and (Engine.get_physics_frames() + _sim_stagger) % interval != 0:
+	_ticks += 1
+	if interval > 1 and (_ticks + _sim_stagger) % interval != 0:
 		_age_ragdolls(car_xf)
 		return
 	var step := _sim_accum

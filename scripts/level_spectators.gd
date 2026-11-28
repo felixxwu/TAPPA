@@ -41,13 +41,13 @@ func set_extra(list: Array) -> void:
 	groups = groups.slice(0, _own) + list
 
 
-func _process(dt: float) -> void:
+func _physics_process(dt: float) -> void:
 	var __t := Time.get_ticks_usec()
-	_timed_process(dt)
+	_timed_physics_process(dt)
 	PerfLog.track(&"level_spectators", Time.get_ticks_usec() - __t)
 
 
-func _timed_process(dt: float) -> void:
+func _timed_physics_process(dt: float) -> void:
 	_collect_placed()
 	_since += dt
 	if car == null or _since < CHECK_S:
@@ -57,7 +57,7 @@ func _timed_process(dt: float) -> void:
 
 
 func _threaded() -> bool:
-	return OS.has_feature("threads")
+	return OS.has_feature("threads") and not Benchmark.golden  # golden replays place crowds in step with the tick
 
 
 func _collect_placed() -> void:

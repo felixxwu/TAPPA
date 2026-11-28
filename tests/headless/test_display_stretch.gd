@@ -158,16 +158,17 @@ func test_no_safe_area_means_no_insets() -> void:
 func test_safe_shift_moves_each_corner_inward() -> void:
 	var start := Vector2(50, 10)
 	var end := Vector2(40, 30)
-	assert_eq(DisplayStretch.safe_shift(Vector2.ZERO, start, end), Vector2(50, 10), "top-left moves right and down")
-	assert_eq(DisplayStretch.safe_shift(Vector2.ONE, start, end), Vector2(-40, -30), "bottom-right moves left and up")
-	assert_eq(DisplayStretch.safe_shift(Vector2(0.5, 1.0), start, end), Vector2(5, -30),
+	var ds = autofree(DisplayStretch.new())
+	assert_eq(ds.safe_shift(Vector2.ZERO, start, end), Vector2(50, 10), "top-left moves right and down")
+	assert_eq(ds.safe_shift(Vector2.ONE, start, end), Vector2(-40, -30), "bottom-right moves left and up")
+	assert_eq(ds.safe_shift(Vector2(0.5, 1.0), start, end), Vector2(5, -30),
 		"bottom-centre follows the safe area's own centre")
 
 
 func test_fit_offsets_shrinks_a_full_rect_control_to_the_safe_area() -> void:
 	var c := Control.new()
 	c.set_anchors_preset(Control.PRESET_FULL_RECT)
-	DisplayStretch.fit_offsets(c, Vector2(50, 10), Vector2(40, 30))
+	autofree(DisplayStretch.new()).fit_offsets(c, Vector2(50, 10), Vector2(40, 30))
 	assert_eq(Vector4(c.offset_left, c.offset_top, c.offset_right, c.offset_bottom),
 		Vector4(50, 10, -40, -30), "each edge sits on the matching safe-area edge")
 	c.free()

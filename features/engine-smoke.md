@@ -48,7 +48,7 @@ overlay instead of hitching on the first misfire — see
   point is transformed by the car's `global_transform`, so smoke rises from the engine
   for any car.
 - **Motion / look.** Each particle rises (`engine_smoke_rise_mps` plus a little
-  random `engine_smoke_scatter_mps`), **grows** over its life (uniform scale written
+  random `engine_smoke_scatter_mps`, from `RngStreams.make("engine_smoke")`), **grows** over its life (uniform scale written
   into the MultiMesh basis diagonal, up to `engine_smoke_growth`×), and **fades** to
   nothing (per-instance alpha via MultiMesh instance colours + a transparent unshaded
   billboard, `engine_smoke_color`). Longer lifetime than the dust

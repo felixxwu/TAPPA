@@ -105,9 +105,8 @@ var misfire_count := 0
 # a bang. ExhaustFlames reads the delta each frame, exactly as EngineSmoke reads
 # misfire_count. See features/exhaust-flames.md.
 var limiter_cut_count := 0
-# Own RNG so misfires are reproducible in tests (set _rng.seed) and each car instance
-# stumbles independently. Randomised at runtime in _init.
-var _rng := RandomNumberGenerator.new()
+# Own RNG so misfires are reproducible in tests (set _rng.seed) and in replays.
+var _rng := RngStreams.make("engine")
 # Per-gear upshift airspeeds (m/s), one per forward gear. shift_up_speeds[g-1]
 # is the forward ground speed at which gear g nears redline; the box upshifts
 # on reaching it. The top gear's slot is INF.
@@ -127,13 +126,6 @@ func _init(p_config: GameConfig) -> void:
 	# freshly built engine stepped before its first reset would otherwise read as unfitted.
 	_has_nitrous = config.has_nitrous()
 	nitrous_charge = config.nitrous_tank_seconds if _has_nitrous else 0.0
-	# In benchmark mode use a fixed seed so misfires (and their smoke FX) repeat
-	# identically run-to-run; otherwise randomise so each car instance stumbles
-	# independently in normal play. See features/benchmark.md.
-	if Benchmark.active:
-		_rng.seed = Benchmark.RNG_SEED
-	else:
-		_rng.randomize()
 	_compute_shift_speeds()
 
 

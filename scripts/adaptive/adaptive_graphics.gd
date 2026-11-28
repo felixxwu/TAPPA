@@ -31,7 +31,7 @@ func setup(v: LevelView) -> void:
 		return
 	if state.is_empty() and not Benchmark.active:
 		state = load_file(save_path)
-	controller.from_dict(state)
+	controller.from_dict(state, _now())
 	for k in controller.knobs:
 		k.set_level(k.level)
 		_levels[k.id] = k.level

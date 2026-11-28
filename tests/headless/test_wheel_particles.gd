@@ -337,7 +337,7 @@ func test_advance_moves_origin_but_freezes_look() -> void:
 func test_zero_jitter_uses_the_look_colour_verbatim() -> void:
 	Config.data.wheel_particle_color_jitter = 0.0
 	var base := Color(0.4, 0.3, 0.2, 1.0)
-	assert_eq(WheelParticles._jittered(Config.data, base), base,
+	assert_eq(WheelParticles._jittered(Config.data, base, RandomNumberGenerator.new()), base,
 		"zero jitter leaves the colour untouched")
 
 

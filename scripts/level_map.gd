@@ -726,14 +726,19 @@ func _process(delta: float) -> void:
 	PerfLog.track(&"level_map", Time.get_ticks_usec() - __t)
 
 
+func _physics_process(delta: float) -> void:
+	if visible:
+		return
+	_reveal_clock += delta
+	if _reveal_clock >= REVEAL_TICK_S and not get_tree().paused:
+		_reveal_clock = 0.0
+		reveal_at_car()
+
+
 func _timed_process(delta: float) -> void:
 	if _painter != null and not _painter.is_alive():
 		build()
 	if not visible:
-		_reveal_clock += delta
-		if _reveal_clock >= REVEAL_TICK_S and not get_tree().paused:
-			_reveal_clock = 0.0
-			reveal_at_car()
 		return
 	if covered():
 		return

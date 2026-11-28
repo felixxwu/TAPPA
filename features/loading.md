@@ -24,7 +24,7 @@ Related: [level-streamer.md](level-streamer.md) (the tile streaming),
 Each step `print()`s its time (`level view: … ms`) and lands in `LevelView.load_ms`, which the
 benchmark report reads. `loaded` is emitted once the level is up.
 
-`LoadingScreen`'s visible line is never the build step: it is a random pick from
+`LoadingScreen`'s visible line is never the build step: it is a random pick (`RngStreams.shared("loading_tips")`) from
 `LoadingTips.TIPS` (`scripts/loading_tips.gd`), drawn once in `_init()` and then **cycled
 to a fresh draw every 7 seconds** (`LoadingScreen._TIP_CYCLE_SEC`) for as long as the
 overlay is up, so a long load doesn't sit on one sentence for its whole duration. Each tip

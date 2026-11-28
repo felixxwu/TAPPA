@@ -11,5 +11,5 @@ func _ready() -> void:
 		get_tree().change_scene_to_file.call_deferred("res://benchmark/level_replay.tscn")  # benchmark/level_replay.gd
 		return
 	if not WorldSession.has_world():
-		WorldSession.new_world(randi(), Config.authored_value("level_car_id", Config.data.level_car_id))
+		WorldSession.new_world(RngStreams.make("world").randi(), Config.authored_value("level_car_id", Config.data.level_car_id))
 	Scenes.change_to.call_deferred(get_tree(), Scenes.WORLD)

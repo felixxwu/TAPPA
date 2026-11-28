@@ -58,7 +58,7 @@ var _last_cut_count := 0
 var _frame := 0
 var _frame_timer := 0.0
 # Deterministic frame generation + frame picking (tests can pin the seed).
-var _rng := RandomNumberGenerator.new()
+var _rng := RngStreams.make("exhaust_flames")
 var _warming := false
 # Seconds of the light flash left; > 0 means fl_color is being written.
 var _flash_left := 0.0
@@ -176,7 +176,7 @@ static func build_frames(cfg: GameConfig) -> Array[ImageTexture]:
 		var rng := RandomNumberGenerator.new()
 		# Seeded per frame index, so the same config always yields the same frames — the
 		# variation between them is authored, not a per-run accident.
-		rng.seed = hash("exhaust_flame_%d" % i)
+		rng.seed = RngStreams.fnv1a32("exhaust_flame_%d" % i)
 		out.append(ImageTexture.create_from_image(_draw_frame(cfg, size, rng)))
 	return out
 

@@ -44,7 +44,7 @@ already takes, then **frozen for the particle's whole life**. A `Look` (an inner
 `RefCounted`: `half_w`, `half_h`, `color`) is built by `_grass_look` (a slim blade at
 `wheel_particle_grass_width_m` x `wheel_particle_grass_length_m`, or the square
 `_clod_look` shape at `wheel_particle_size_m` where the region asks); the road returns
-`null` and throws nothing. `_jittered` then varies the brightness per particle by
+`null` and throws nothing. `_jittered` (handed the pool's `RngStreams.make("wheel_particles")`) then varies the brightness per particle by
 +/- `wheel_particle_color_jitter` so a burst reads as many separate bits of debris
 rather than one flat smear.
 

@@ -81,11 +81,13 @@ consumer that reads it, and list it in `config_fields`.
 beside the view and starts it.
 
 - **Drift.** Drive time is cut into `level_weather_hold_s` slots. Slot 0 is `level_weather`;
-  each later slot is a seeded weighted pick from `level_weather_pool` (`LevelWeather.draw`,
+  each later slot is a seeded (`RngStreams.make("weather")`) weighted pick from `level_weather_pool` (`LevelWeather.draw`,
   parsed by `LevelWeather.parse_pool`, which drops unknown ids) that never repeats the slot
   before. The clock, seed and Dev override are static vars, so they survive the level's
   reloads (buying parts, changing cars). The default pool has no `sandstorm`; it is only
-  shown if the pool is edited.
+  shown if the pool is edited. The clock and the switch to a new condition run on the
+  physics tick (`_physics_process`), since `GameConfig.weather` changes grip and wind; only
+  the fade (`_step`) runs per frame in `_process`.
 - **Rain is snow in the snow biome.** `LevelWeather.resolve` swaps `rain` for `snow` while
   `LevelStreamer.snow_at` under the car is above `SNOW_AT`.
 - **Showing a condition** (`LevelWeather._show`) calls `LevelView.apply_weather`, which seats

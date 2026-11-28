@@ -49,6 +49,7 @@ var _travel: PackedFloat32Array
 
 # Region override for the GRAVEL dust colour. Alpha 0 = unset (GameConfig.dust_puff_color).
 var _color_override := Color(0.0, 0.0, 0.0, 0.0)
+var _rng := RngStreams.make("dust_puffs")
 
 
 func _stride() -> int:
@@ -342,23 +343,23 @@ static func puff_velocity(cfg: GameConfig, car_vel: Vector3, scrub: Vector3) -> 
 func _emit_puff(cfg: GameConfig, cp: Vector3, base_vel: Vector3, c: Color) -> void:
 	var scatter := cfg.dust_puff_scatter_mps
 	var vel := base_vel + Vector3(
-		randf_range(-scatter, scatter),
-		cfg.dust_puff_rise_mps + randf_range(0.0, scatter),
-		randf_range(-scatter, scatter))
+		_rng.randf_range(-scatter, scatter),
+		cfg.dust_puff_rise_mps + _rng.randf_range(0.0, scatter),
+		_rng.randf_range(-scatter, scatter))
 	# Spawn sitting on the ground rather than half-buried in it, scattered a little
 	# across the tyre's width so the trail isn't a single file of beads.
 	var pos := cp + Vector3(
-		randf_range(-0.25, 0.25), cfg.dust_puff_size_m, randf_range(-0.25, 0.25))
-	var life := cfg.dust_puff_lifetime_s * randf_range(0.8, 1.2)
+		_rng.randf_range(-0.25, 0.25), cfg.dust_puff_size_m, _rng.randf_range(-0.25, 0.25))
+	var life := cfg.dust_puff_lifetime_s * _rng.randf_range(0.8, 1.2)
 	_emit_slot(pos, vel, life)
 	_max_life[_next] = life
 	# Uneven stretch per axis, on top of an overall size spread between puffs.
-	var stretch := Vector3(randf_range(0.75, 1.25), randf_range(0.7, 1.0), randf_range(0.75, 1.25)) \
-		* randf_range(0.7, 1.3)
+	var stretch := Vector3(_rng.randf_range(0.75, 1.25), _rng.randf_range(0.7, 1.0), _rng.randf_range(0.75, 1.25)) \
+		* _rng.randf_range(0.7, 1.3)
 	var tumble := Basis(Quaternion(
-		randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)).normalized())
+		_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)).normalized())
 	_set_shape(_next, tumble * Basis.from_scale(stretch))
 	_write_transform(_next, pos, size_at(cfg, 0.0))
 	var j := cfg.dust_puff_color_jitter
-	var f := 1.0 + randf_range(-j, j)
+	var f := 1.0 + _rng.randf_range(-j, j)
 	_write_color(_next, Color(c.r * f, c.g * f, c.b * f))

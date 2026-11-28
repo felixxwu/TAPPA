@@ -26,6 +26,7 @@ var _max_life: PackedFloat32Array
 # Last EngineSim.misfire_count we turned into puffs — the delta each tick is the
 # number of new cuts to emit for.
 var _last_misfire_count := 0
+var _rng := RngStreams.make("engine_smoke")
 
 
 func _stride() -> int:
@@ -174,11 +175,11 @@ func _puff(cfg: GameConfig) -> void:
 	var origin: Vector3 = _car.global_transform * local
 	for _n in maxi(1, cfg.engine_smoke_per_cut):
 		var scatter := Vector3(
-			randf_range(-1.0, 1.0), randf_range(0.0, 0.5), randf_range(-1.0, 1.0)
+			_rng.randf_range(-1.0, 1.0), _rng.randf_range(0.0, 0.5), _rng.randf_range(-1.0, 1.0)
 		) * cfg.engine_smoke_scatter_mps
 		var vel := Vector3.UP * cfg.engine_smoke_rise_mps + scatter
 		var ppos := origin + Vector3(
-			randf_range(-0.1, 0.1), randf_range(-0.05, 0.05), randf_range(-0.1, 0.1)
+			_rng.randf_range(-0.1, 0.1), _rng.randf_range(-0.05, 0.05), _rng.randf_range(-0.1, 0.1)
 		)
 		_emit(cfg, ppos, vel)
 

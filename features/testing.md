@@ -13,6 +13,11 @@ emulators. `./run_tests.sh` leaves it out; `./run_tests.sh --emulator` runs it i
 `--fixed-fps`, because `HTTPRequest`'s timeout counts game time and a fixed-fps loop would time
 real requests out almost at once. Details in [cloud-save.md](cloud-save.md) › Tests.
 
+**CI** (`.github/workflows/test.yml`, on every PR to `main`) runs three jobs: `headless`
+(`./run_tests.sh`), `emulator` (the suite above) and `replay-determinism`
+(`./run_level_replay.sh --golden-check --full`: replays `benchmark/runs/hafren.rec` twice, the
+second under CPU load, and fails if the per-tick traces differ; see [benchmark.md](benchmark.md)).
+
 > Per CLAUDE.md: run `./run_tests.sh` in the **background**, wait for the
 > completion notification, and never start a second run while one is active. All
 > tests must pass before declaring work complete.

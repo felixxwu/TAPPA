@@ -60,6 +60,7 @@ var _grass_color_override := Color(0.0, 0.0, 0.0, 0.0)
 # blade. True swaps it for the square clod, because a snowfield throws powder,
 # not blades of grass. Seated by the host alongside the colour override.
 var _grass_square_override := false
+var _rng := RngStreams.make("wheel_particles")
 
 
 func _stride() -> int:
@@ -160,11 +161,11 @@ func _grass_look(cfg: GameConfig) -> Look:
 # Vary a look's colour brightness a little per particle so a burst reads as many
 # separate bits of debris rather than one flat-coloured smear. Free now that each
 # instance carries its own colour. Alpha is untouched (the pool is opaque).
-static func _jittered(cfg: GameConfig, base: Color) -> Color:
+static func _jittered(cfg: GameConfig, base: Color, rng: RandomNumberGenerator) -> Color:
 	var j: float = cfg.wheel_particle_color_jitter
 	if j <= 0.0:
 		return base
-	var f := 1.0 + randf_range(-j, j)
+	var f := 1.0 + rng.randf_range(-j, j)
 	return Color(base.r * f, base.g * f, base.b * f, base.a)
 
 
@@ -352,10 +353,10 @@ func _spray(cfg: GameConfig, look: Look, cp: Vector3, fwd: Vector3, vel: Vector3
 		# Random cone around the base throw (upward-biased y so debris arcs up, not
 		# down into the ground) plus a small spawn scatter across the contact patch.
 		var jitter := Vector3(
-			randf_range(-1.0, 1.0), randf_range(0.0, 1.0), randf_range(-1.0, 1.0)
+			_rng.randf_range(-1.0, 1.0), _rng.randf_range(0.0, 1.0), _rng.randf_range(-1.0, 1.0)
 		) * spread
 		var ppos := cp + Vector3(
-			randf_range(-0.1, 0.1), randf_range(0.0, 0.05), randf_range(-0.1, 0.1)
+			_rng.randf_range(-0.1, 0.1), _rng.randf_range(0.0, 0.05), _rng.randf_range(-0.1, 0.1)
 		)
 		_emit(cfg, look, ppos, base + jitter)
 
@@ -366,4 +367,4 @@ func _spray(cfg: GameConfig, look: Look, cp: Vector3, fwd: Vector3, vel: Vector3
 func _emit(cfg: GameConfig, look: Look, pos: Vector3, vel: Vector3) -> void:
 	_emit_slot(pos, vel, cfg.wheel_particle_lifetime_s)
 	# caller uploads the whole buffer once per tick
-	_write_slot(_next, pos, look, randf_range(0.0, TAU), cfg.weather_lit(_jittered(cfg, look.color)))
+	_write_slot(_next, pos, look, _rng.randf_range(0.0, TAU), cfg.weather_lit(_jittered(cfg, look.color, _rng)))

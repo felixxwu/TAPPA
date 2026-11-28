@@ -338,6 +338,8 @@ func _audio_now() -> float:
 	# voices still stay sample-aligned because they share the one polyphonic mix
 	# timeline, and from_offset absorbs per-frame jitter. Wall-vs-audio drift is
 	# ~ppm — negligible over a session.
+	if Benchmark.golden:
+		return Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
 	return Time.get_ticks_usec() / 1_000_000.0
 
 

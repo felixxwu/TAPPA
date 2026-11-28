@@ -106,7 +106,7 @@ In `GameConfig.exhaust_offsets`. By precedent they could move to `CarLibrary.CAR
 The frames are **generated at runtime** from config rather than loaded from disk: nothing
 ships in the PCK, and the shape stays tunable instead of being frozen
 into a PNG. `build_frames` draws `exhaust_flame_frames` small images
-(`exhaust_flame_texture_px` square), each seeded on its frame index so the same config
+(`exhaust_flame_texture_px` square), each seeded on its frame index (`RngStreams.fnv1a32`) so the same config
 always yields the same frames — the variation between them is authored, not a per-run
 accident that could differ between two cars.
 

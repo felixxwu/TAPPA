@@ -2,7 +2,7 @@
 
 **Source:** `benchmark/level_replay.gd` + `benchmark/level_replay.tscn` (`LevelReplay`), run with
 `./run_level_replay.sh` or `?replay=1` in a browser; `scripts/benchmark_mode.gd` (the `Benchmark`
-autoload: just the `active` flag, `RNG_SEED` and `render_height`); `scripts/benchmark_stats.gd`
+autoload: the `active` and `golden` flags, `RNG_SEED` and `render_height`); `scripts/benchmark_stats.gd`
 (`BenchmarkStats`); `scripts/benchmark_report.gd` (`BenchmarkReport`); the capture window in
 `scripts/perf_log.gd`; the collector `tools/bench_collector.py` (wired into `start_web.sh`).
 
@@ -21,19 +21,40 @@ for you to drive (with that car, else the save's) and, when you quit (pause → 
 velocities and inputs (default `benchmark/runs/hafren.rec`: since 2026-11-27 a 42 s fast drive in The Beast from the Cwmbiga point, recorded with `--car=beast`; `--at=<teleport>` picks another start). A recording starts where a new player does — the `level_spawn_teleport` point (`LevelView.spawn_pose`; `Benchmark.active` is off while recording) — not the level view's saved spot; a replay starts wherever its first recorded pose is, and `level_spawn` is only the fallback. With no flag it replays that file: the inputs go
 through `Car.ai_controlled` and the pose is written to the physics server each tick, so the path, dust, marks and
 felled trees repeat exactly; frame rate is uncapped with vsync off, frames are sampled after `WARMUP_FRAMES`, and
-`BenchmarkStats.print_summary` prints the stats before it quits. Replays use the default
-car and the chase camera, not your save. A replay stops after `DEFAULT_UNTIL_S` (15 s); `--full` plays the whole
+`BenchmarkStats.print_summary` prints the stats before it quits. Replays use the recorded
+car and the chase camera, not your save: every non-recording replay (web included) swaps in a blank fixture profile
+(`_use_fixture_profile`: `Save.profile_path = user://level_replay_profile.json`, a default profile, `save_disabled`), so it
+starts from the same money, cars and discovery on every machine and never writes the player's profile. A replay stops after `DEFAULT_UNTIL_S` (15 s); `--full` plays the whole
 drive, `--until=<s>` any length, and `--off=DustPuffs,BushInteraction*,GroundCover` hides and stops the scene nodes with those names (wildcards) or script classes first (hidden ground cover also builds no tiles), to isolate a feature's
 cost. Every frame over `BenchmarkStats.SPIKE_MS` is printed with its time and the car's position.
 
 While replaying, the replay sets `Benchmark.active`, which the rest of the game reads to hold still for it:
-the engine's misfire RNG is seeded from `Benchmark.RNG_SEED` (`engine.gd`), nothing syncs to the cloud
+every seeded RNG restarts from `Benchmark.RNG_SEED` (`RngStreams.reseed`, called before the level loads), nothing syncs to the cloud
 (`CloudSync._can_sync`), adaptive graphics stays at its authored settings, the web fullscreen prompt is
 kept hidden (`web_fullscreen.gd`, which rechecks when the flag flips), and the frame is laid out landscape (below).
 
+## Golden replay (determinism check)
+
+`./run_level_replay.sh --golden-check [path] [--until=15]` replays the drive twice with
+`--headless --fixed-fps 60 … -- --golden --seed=90210 --trace=<file>`, the second time with a `yes` CPU hog on every
+core, and `cmp`s the two traces; on a mismatch it prints the first differing tick and both lines and exits 1. It
+writes an `override.cfg` turning `physics/3d/run_on_separate_thread` off for the two runs (removed by a `trap`) and
+refuses to start if one already exists.
+
+`--golden` sets `Benchmark.golden` and turns `threaded_chunk_build` / `threaded_tree_build` off. `_golden_ready` quits
+with code 1 unless the run is headless, has the physics thread off and has no `--adaptive`;
+`_trace_tick` also quits if process and physics frames ever stop stepping 1:1. `_trace_tick` writes one sorted-key
+JSON line per tick before the tick's inputs are applied: frame counters, pause, the car's position and engine state,
+damage, weather, delivery, money, felled trees, streamer/cover counts, crowd groups and every live
+`RngStreams.live_states()`. Perf replays never set `golden`, so their numbers still measure real streaming.
+Under `golden` the world streams by frame count, not time: `LevelStreamer.prefill_async` fills in one go (its
+`prefill_slice_ms` slices were what made the frames before the pause menu arms vary), the streamer, cover and
+`LevelTrees` drain everything due each frame, and `LevelSpectators` places crowds inline. The plan
+for making the check pass is `todo/2026-11-28-phase-1-1-determinism-plan.md`.
+
 ## The report
 
-`_report` builds the JSON with `BenchmarkReport.build`: the `BenchmarkStats.summarise` block (avg fps,
+`_report` builds the JSON with `BenchmarkReport.build`: the `BenchmarkStats.summarise` block plus `distance_m` (`_driven_m`: the recorded path over the ticks played) (avg fps,
 **1% low** (inverse p99 frame), frame avg/p95/p99/max, spikes, per-stream avg/max of draws / objects /
 prims / render cpu+gpu / process / physics), a per-script CPU breakdown (`scripts`, from
 `PerfLog.begin_capture()` / `end_capture(frame_count)`, a capture window that works in release builds

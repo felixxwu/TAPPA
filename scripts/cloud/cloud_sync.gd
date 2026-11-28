@@ -58,6 +58,7 @@ var enabled := true
 var _debounce: Timer
 var _retry: Timer
 var _backoff := BACKOFF_START_SEC
+var _rng := RngStreams.make("cloud_sync")
 var _busy := false
 var _pulling := false
 # Bumped on every local change, so a push can tell whether the profile moved on while it uploaded.
@@ -610,7 +611,7 @@ func _fail_from_response(response: Dictionary) -> Dictionary:
 func _go_offline(message: String) -> void:
 	_set_status(Status.OFFLINE, message)
 	if pending:
-		_retry.wait_time = _backoff * randf_range(0.8, 1.2)
+		_retry.wait_time = _backoff * _rng.randf_range(0.8, 1.2)
 		_retry.start()
 		_backoff = minf(_backoff * 2.0, BACKOFF_MAX_SEC)
 

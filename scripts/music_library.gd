@@ -169,4 +169,4 @@ static func _random_from_pool(pool: Array[String], exclude_id: String) -> String
 	var choices := pool.duplicate()
 	if choices.size() > 1 and choices.has(exclude_id):
 		choices.erase(exclude_id)
-	return choices[randi() % choices.size()]
+	return choices[RngStreams.shared("music").randi() % choices.size()]

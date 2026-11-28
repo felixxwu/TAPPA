@@ -20,7 +20,7 @@ keeps its own progress in saved settings (`LevelView`: money, car, parts, pose; 
 [level-editor.md](level-editor.md)).
 
 - **New world** (`new_world(seed, model_id)`): replaces the world **and the old owned cars**, because
-  a world is the whole save, and grants the starter car. `title_boot.gd` uses a random seed
+  a world is the whole save, and grants the starter car. `title_boot.gd` uses a random seed (`RngStreams.make("world")`)
   and the level's authored start car (`Config.authored_value("level_car_id", …)`).
 - **The world generation.** `WorldSession.generation` moves on (`invalidate()`, which also emits
   `world_changed`) whenever the profile's world is replaced: `new_world`, or a whole-profile swap

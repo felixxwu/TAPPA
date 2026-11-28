@@ -153,13 +153,13 @@ static func safe_insets(window_size: Vector2i, safe_px: Rect2i, logical: Vector2
 # How far a point anchored at `anchor` (0..1 per axis, as Control anchors) moves to land at
 # the same anchor inside the safe area. Self-placing widgets (the HUD dial, the minimap)
 # add this to the position they compute against the full frame.
-static func safe_shift(anchor: Vector2, start := inset_start, end := inset_end) -> Vector2:
+func safe_shift(anchor: Vector2, start := inset_start, end := inset_end) -> Vector2:
 	return Vector2(lerpf(start.x, -end.x, anchor.x), lerpf(start.y, -end.y, anchor.y))
 
 
 # Moves a control's edges so its anchors resolve against the safe area instead of the full
 # frame, by adding the given (change in) insets to its offsets.
-static func fit_offsets(c: Control, start: Vector2, end: Vector2) -> void:
+func fit_offsets(c: Control, start: Vector2, end: Vector2) -> void:
 	c.offset_left += safe_shift(Vector2(c.anchor_left, 0.0), start, end).x
 	c.offset_right += safe_shift(Vector2(c.anchor_right, 0.0), start, end).x
 	c.offset_top += safe_shift(Vector2(0.0, c.anchor_top), start, end).y

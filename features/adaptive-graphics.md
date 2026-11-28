@@ -52,7 +52,8 @@ nobody has to pick settings. There is no Graphics page. Design record: `todo/202
   teleport (the car jumping more than `AdaptiveGraphics.JUMP_M`) or weather swap, and starts fresh after.
 - **Memory.** Levels and estimates are kept in statics across the level's reloads and written to
   `user://adaptive_graphics.json` every 30 s — per device, never in the cloud-synced save. A first run
-  starts every setting in the middle.
+  starts every setting in the middle. `AdaptiveController.from_dict(d, now_s)` takes the clock from its
+  caller (`adaptive_graphics.gd` → `setup` passes `_now()`, tests pass `0.0`) to clamp saved back-offs.
 - **Benchmark.** While `Benchmark.active` every setting sits at its authored top and nothing adapts,
   unless the level replay is run with `--adaptive` / `&adaptive=1`; its report then carries
   `adaptive: [{t, id, level}]` and its label ends `-adaptive`.

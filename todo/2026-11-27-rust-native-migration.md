@@ -33,7 +33,7 @@ spec items still applies.
 - [ ] **Exit:** live on the App Store and Cloudflare Pages; sign-in and deletion work everywhere
 
 **Phase 1 — Yardsticks**
-- [ ] 1.1 Deterministic replays
+- [ ] 1.1 Deterministic replays (in progress: per-frame state onto the tick, docs, CI job's first green run; see `todo/2026-11-28-phase-1-1-determinism-plan.md`)
 - [ ] 1.2 Car step golden
 - [ ] 1.3 Car drift report
 - [ ] 1.4 Game-state trace
@@ -742,7 +742,11 @@ deleting the account work on every platform. The native iPhone frame-time number
 1. **Make the level deterministic under replay.** Today two replays of the same drive don't produce
    the same game: the car is fed recorded poses, but other systems still depend on frame timing,
    wall-clock time and unseeded randomness. Fix that first, for replays at least:
-   - Give every system its own seeded random number stream instead of the global `randf` / `randi`.
+   - Status: the plan is `todo/2026-11-28-phase-1-1-determinism-plan.md`. Its "Chosen defaults" for
+     the open questions were picked while the user was away and are awaiting the user's review.
+   - CI: the `replay-determinism` job in `.github/workflows/test.yml` runs
+     `./run_level_replay.sh --golden-check --full` (in progress: added 2026-11-28, not yet green on CI).
+   - (2026-11-28: `RngStreams`, `scripts/rng_streams.gd`) Give every system its own seeded random number stream instead of the global `randf` / `randi`.
      The global calls are in `damage_model.gd` (`nudge_wheels`),
      `level_weather.gd` (`seed_value = randi()`), `dust_puffs.gd`, `wheel_particles.gd`,
      `engine_smoke.gd`, `loading_tips.gd`, `music_library.gd` and `cloud/cloud_sync.gd`. Two more
@@ -760,20 +764,21 @@ deleting the account work on every platform. The native iPhone frame-time number
        `randf_range`, `randi_range`, `randfn` or `randomize`, `Array.shuffle()` or `pick_random()`
        (which use the global generator), or creates a `RandomNumberGenerator` it never
        seeds, so new code can't bring them back.
-   - Move game-state logic that runs per rendered frame onto the physics tick. Examples: the weather
+   - (in progress: weather clock, deliveries, spectator refresh, map reveal and timers being moved)
+     Move game-state logic that runs per rendered frame onto the physics tick. Examples: the weather
      clock (`level_weather.gd` advances `drive_time` in `_process`), deliveries (`level_view.gd` →
      `_check_delivery` in `_timed_process`).
-   - Leave wall-clock fields out of traces (`save_manager.gd` writes `updated_utc` from the system
+   - (2026-11-28) Leave wall-clock fields out of traces (`save_manager.gd` writes `updated_utc` from the system
      clock).
-   - Make all streaming finish before each tick during replays. Several systems finish work to a time
+   - (2026-11-28; in progress: recording the audit in the parity checklist) Make all streaming finish before each tick during replays. Several systems finish work to a time
      budget or on worker threads, so what exists at a given tick depends on the machine's speed:
      terrain chunks (`LevelStreamer` (features/level-streamer.md)), trees and their hitboxes (`level_trees.gd`
      → `_pump`, plus `WorkerThreadPool` tile packs polled with `is_task_completed`), ground cover
      (`ground_cover.gd`) and spectators (`level_spectators.gd` spawns from `_process`). Audit every
      `_process` and every `WorkerThreadPool` use in `scripts/`, and record in the parity
      checklist how each behaves under a golden replay.
-   - Run golden replays with `physics/3d/run_on_separate_thread` off.
-   - Run golden replays with adaptive graphics off (the replay's default unless `--adaptive`). Its
+   - (2026-11-28) Run golden replays with `physics/3d/run_on_separate_thread` off.
+   - (2026-11-28; the `AdaptiveController` parity test is deferred past 1.1, pending the user's review) Run golden replays with adaptive graphics off (the replay's default unless `--adaptive`). Its
      knobs (`LevelKnobs`) change spectators, tree draw distance and ground-cover reach based on
      measured frame time, which would change the scene counts. `AdaptiveController` gets its own
      parity test on a synthetic frame-time sequence instead.

@@ -132,8 +132,8 @@ func to_dict() -> Dictionary:
 	return {"knobs": out}
 
 
-## Restores what to_dict saved, tolerating missing, unknown or out-of-range entries.
-func from_dict(d: Variant) -> void:
+## Restores what to_dict saved, tolerating missing, unknown or out-of-range entries. now_s is the caller's clock.
+func from_dict(d: Variant, now_s: float) -> void:
 	if not d is Dictionary or not (d as Dictionary).get("knobs") is Dictionary:
 		return
 	var saved: Dictionary = d["knobs"]
@@ -145,8 +145,7 @@ func from_dict(d: Variant) -> void:
 		k.cost_ms = clampf(_num(e.get("cost_ms"), k.prior_ms), 0.0, MAX_COST_MS)
 		k.samples = maxi(0, int(_num(e.get("samples"), 0)))
 		k.fails = clampi(int(_num(e.get("fails"), 0)), 0, 8)
-		var now := Time.get_ticks_usec() / 1e6
-		k.backoff_until_s = clampf(_num(e.get("backoff_until_s"), 0.0), 0.0, now + cfg().adaptive_backoff_s[-1])
+		k.backoff_until_s = clampf(_num(e.get("backoff_until_s"), 0.0), 0.0, now_s + cfg().adaptive_backoff_s[-1])
 
 
 static func _num(v: Variant, fallback: float) -> float:

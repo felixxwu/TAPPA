@@ -8,6 +8,7 @@ extends Node
 #       renders straight to the screen), --flat-sky swaps the panorama sky for a plain colour, --no-timers leaves the
 #       renderer's timing off, --empty samples a bare camera for the engine's own floor
 #     in a browser (./start_web.sh): https://localhost:8080/?replay=1, with &until=30 or &full=1
+#     ./run_level_replay.sh --golden-check   # replays twice (one under CPU load) and checks the per-tick traces match
 #
 # Each physics tick stores the car's pose, velocities and the driver's inputs. The replay feeds the
 # inputs back through the car's AI controls and snaps the pose each tick, so the car (and its dust,
@@ -18,6 +19,7 @@ const REPORT_PATH := "user://level_replay_report.json"  # a native replay's full
 const STRIDE := 21  # per tick: basis 9, origin 3, linear velocity 3, angular velocity 3, throttle, steer, handbrake
 const WARMUP_FRAMES := 60  # unsampled frames after the warm-up, while the first views settle
 const DEFAULT_UNTIL_S := 15.0  # enough to compare one change; --full replays all of it
+const FIXTURE_PROFILE_PATH := "user://level_replay_profile.json"  # never written: save_disabled is on
 
 var _path := DEFAULT_PATH
 var _recording := false
@@ -48,6 +50,9 @@ var _record_car := ""  # --car=<id>: record with this car instead of the save's
 var _record_at := ""  # --at=<teleport name>: record from this teleport point
 var _no_timers := false  # leave the renderer's own timing off, to see what measuring it costs
 var _empty := false      # a camera and nothing else: the engine's and browser's own per-frame floor
+var _trace_path := ""   # --trace=<file>: golden runs write one JSON line of game state per tick here
+var _trace: FileAccess
+var _frame_skew := -1   # process frames minus physics frames at the first traced tick; must never change
 
 
 # Runs after every other node's _physics_process, marking where the physics engine's step begins.
@@ -87,6 +92,10 @@ func _ready() -> void:
 			_record_car = arg.get_slice("=", 1)
 		elif arg == "--adaptive" or arg == "--adaptive=1":
 			AdaptiveGraphics.force_on = true
+		elif arg == "--golden":
+			Benchmark.golden = true
+		elif arg.begins_with("--trace="):
+			_trace_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--off="):
 			_off = arg.get_slice("=", 1).split(",")
 	if not _recording and DisplayServer.get_name() == "headless":
@@ -95,6 +104,12 @@ func _ready() -> void:
 	# A landscape-sized frame and no rotate prompt even on a portrait phone, a fixed engine misfire seed,
 	# and no cloud sync.
 	Benchmark.active = not _recording
+	if not _recording:
+		_use_fixture_profile()
+		RngStreams.reseed(Benchmark.RNG_SEED)
+	if Benchmark.golden and not _golden_ready():
+		get_tree().quit(1)
+		return
 	if _empty:
 		var cam := Camera3D.new()
 		add_child(cam)
@@ -204,6 +219,37 @@ func _turn_off() -> void:
 			push_warning("level replay: nothing matches --off=%s" % pattern)
 
 
+# Every replay starts from the same blank profile instead of the player's, and writes nothing back.
+func _use_fixture_profile() -> void:
+	Save.profile_path = FIXTURE_PROFILE_PATH
+	Save.profile = Save._default_profile()
+	Save.save_disabled = true
+
+
+# A golden run must step exactly one process frame per physics tick on the main thread; anything else is refused.
+func _golden_ready() -> bool:
+	var why := ""
+	if _recording:
+		why = "--golden replays a recording; it can't record"
+	elif DisplayServer.get_name() != "headless":
+		why = "run it with --headless"
+	elif ProjectSettings.get_setting("physics/3d/run_on_separate_thread", false):
+		why = "physics/3d/run_on_separate_thread is on (./run_level_replay.sh --golden-check writes an override.cfg turning it off)"
+	elif AdaptiveGraphics.force_on:
+		why = "--adaptive changes settings mid-run"
+	if why != "":
+		push_error("level replay --golden: " + why)
+		return false
+	Config.data.threaded_chunk_build = false
+	Config.data.threaded_tree_build = false
+	if _trace_path != "":
+		_trace = FileAccess.open(_trace_path, FileAccess.WRITE)
+		if _trace == null:
+			push_error("level replay --golden: can't write %s" % _trace_path)
+			return false
+	return true
+
+
 func _physics_process(_delta: float) -> void:
 	if not _started:
 		return
@@ -212,10 +258,77 @@ func _physics_process(_delta: float) -> void:
 	elif _empty and _tick < _until_s * Engine.physics_ticks_per_second:
 		_tick += 1
 	elif _tick * STRIDE < _ticks.size() and _tick < _until_s * Engine.physics_ticks_per_second:
+		if Benchmark.golden and not _trace_tick(_tick):
+			return
 		_play_tick(_tick)
 		_tick += 1
 	else:
 		_finish()
+
+
+# Writes this tick's game state as one sorted-key JSON line, so two golden runs can be compared with cmp.
+func _trace_tick(i: int) -> bool:
+	var skew := Engine.get_process_frames() - Engine.get_physics_frames()
+	if _frame_skew < 0:
+		_frame_skew = skew
+	elif skew != _frame_skew:
+		push_error("level replay --golden: process and physics frames stopped stepping 1:1 at tick %d" % i)
+		_started = false
+		get_tree().quit(1)
+		return false
+	if _trace == null:
+		return true
+	var engine: EngineSim = _car.drivetrain.engine
+	var damage: DamageModel = _car.damage
+	var view := _level.get_node("Level") as LevelView
+	var weather := _level.find_child("LevelWeather", true, false) as LevelWeather
+	var row := {
+		"tick": i, "physics_frames": Engine.get_physics_frames(), "process_frames": Engine.get_process_frames(),
+		"paused": get_tree().paused,
+		"car": {"pos": _vec(_car.global_position), "omega": engine.omega, "gear": engine.gear, "boost": engine.boost,
+			"nitrous_charge": engine.nitrous_charge, "misfire_timer": engine._misfire_timer,
+			"misfire_count": engine.misfire_count, "limiter_cut_count": engine.limiter_cut_count},
+		"damage": {"hp": damage.hp, "wheel_toe": damage.wheel_toe, "engine_temp": damage.engine_temp},
+		"weather": {"drive_time": LevelWeather.drive_time, "shown": weather._shown if weather != null else "",
+			"config": Config.data.weather},
+		"delivery": LevelView.delivery, "money": LevelView.money(),
+		"rng": RngStreams.live_states(),
+	}
+	var trees: LevelTrees = view._trees
+	if trees != null:
+		var fallen := trees._fallen.keys()
+		fallen.sort()
+		var hit_tiles := 0
+		for t in trees._tiles.values():
+			if t.hit != null:
+				hit_tiles += 1
+		row["trees"] = {"fallen": fallen, "hit_tiles": hit_tiles}
+	var streamer: LevelStreamer = view._streamer
+	if streamer != null:
+		var c := streamer.chunk_counts()
+		row["streamer"] = {"chunks": [c.x, c.y, c.z], "tiles": streamer._tiles.size(),
+			"cover_tiles": streamer.cover.tiles.size() if streamer.cover != null else 0,
+			"cover_pending": streamer.cover.pending() if streamer.cover != null else 0}
+	var crowd: LevelSpectators = view._spectators
+	if crowd != null:
+		var groups := []
+		var ids := crowd._live.keys()
+		ids.sort()
+		for id in ids:
+			if not is_instance_valid(crowd._live[id]):
+				continue
+			var g: SpectatorGroup = crowd._live[id]
+			var sum := Vector2.ZERO
+			for p in g._pos:
+				sum += p
+			groups.append([id, g._ragdolls.size(), sum.x, sum.y])
+		row["spectators"] = {"live": crowd.live_count(), "groups": groups}
+	_trace.store_line(JSON.stringify(row, "", true, true))
+	return true
+
+
+static func _vec(v: Vector3) -> Array:
+	return [v.x, v.y, v.z]
 
 
 func _record_tick() -> void:
@@ -340,7 +453,11 @@ func _close_step() -> void:
 
 func _finish() -> void:
 	_started = false
+	if _trace != null:
+		_trace.close()
+		print("level replay: trace written to %s" % _trace_path)
 	var stats := BenchmarkStats.summarise(_samples)
+	stats["distance_m"] = _driven_m()
 	var scripts := PerfLog.end_capture(_samples["frame_ms"].size())
 	print("\n=== level replay benchmark: %s ===" % _path)
 	BenchmarkStats.print_summary(stats, DisplayServer.get_name() == "headless")
@@ -352,6 +469,16 @@ func _finish() -> void:
 			f.store_string(BenchmarkReport.to_json(_report(stats, scripts)))
 			print("level replay: report written to %s" % ProjectSettings.globalize_path(REPORT_PATH))
 	get_tree().quit()
+
+
+# How far the car went over the ticks played, from the recorded positions.
+func _driven_m() -> float:
+	var d := 0.0
+	for i in range(1, mini(_tick, floori(_ticks.size() / float(STRIDE)))):
+		var a := i * STRIDE + 9
+		d += Vector3(_ticks[a], _ticks[a + 1], _ticks[a + 2]).distance_to(
+			Vector3(_ticks[a - STRIDE], _ticks[a - STRIDE + 1], _ticks[a - STRIDE + 2]))
+	return d
 
 
 func _post(stats: Dictionary, scripts: Dictionary) -> void:

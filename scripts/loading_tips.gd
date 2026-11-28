@@ -71,7 +71,7 @@ static func random() -> String:
 static func _pick_avoiding(pool: Array[String], avoid: String) -> String:
 	if pool.is_empty():
 		return ""
-	var pick := pool[randi_range(0, pool.size() - 1)]
+	var pick := pool[RngStreams.shared("loading_tips").randi_range(0, pool.size() - 1)]
 	while pick == avoid and pool.size() > 1:
-		pick = pool[randi_range(0, pool.size() - 1)]
+		pick = pool[RngStreams.shared("loading_tips").randi_range(0, pool.size() - 1)]
 	return pick

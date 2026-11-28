@@ -268,6 +268,7 @@ func _ready() -> void:
 	var timer := Timer.new()
 	timer.wait_time = POSE_SAVE_SEC  # also on a timer: stopping the game from the editor sends no close
 	timer.timeout.connect(save_pose)
+	timer.process_callback = Timer.TIMER_PROCESS_PHYSICS
 	add_child(timer)
 	timer.start()
 	adaptive = AdaptiveGraphics.new()
@@ -995,7 +996,7 @@ func _on_gave_up() -> void:
 	_pause.set_input_enabled(false)
 	map.process_mode = Node.PROCESS_MODE_DISABLED  # no teleporting away from a wreck
 	_set_engine_killed(true)
-	await get_tree().create_timer(Config.data.wreck_page_delay_s, false).timeout
+	await get_tree().create_timer(Config.data.wreck_page_delay_s, false, true).timeout
 	if _wrecked and wreck_page == null and is_inside_tree():
 		_set_driverless(true)
 		open_wreck_page()
@@ -1522,6 +1523,11 @@ func _physics_process(dt: float) -> void:
 
 func _timed_physics_process(dt: float) -> void:
 	heal_at_points(dt)
+	var __t := Time.get_ticks_usec()
+	_check_delivery()
+	PerfLog.track(&"level_view_delivery", Time.get_ticks_usec() - __t)
+	if is_instance_valid(_car) and "config" in _car:
+		_car.mass = _car.config.mass + (float(delivery.get("kg", 0.0)) if delivery.has("cargo_hp") else 0.0)
 	if _car != null and _streamer != null:
 		var snow := _streamer.snow_at(_car.global_position.x, _car.global_position.z)
 		set_snow(Config.data, snow)
@@ -1696,9 +1702,6 @@ func _timed_process(_dt: float) -> void:
 	if _conflict_due and not Benchmark.active:  # the benchmark's profile is a throwaway
 		_offer_conflict()
 	var __t := Time.get_ticks_usec()
-	_check_delivery()
-	PerfLog.track(&"level_view_delivery", Time.get_ticks_usec() - __t)
-	__t = Time.get_ticks_usec()
 	_place_nav_beam()
 	PerfLog.track(&"level_view_nav_beam", Time.get_ticks_usec() - __t)
 	if delivery_label != null:
@@ -1710,8 +1713,6 @@ func _timed_process(_dt: float) -> void:
 		if off_road_label != null and off_road_label.visible:
 			y += off_road_label.size.y + UITheme.FONT_SIZE * 0.5
 		delivery_label.position = Vector2(roundf((get_viewport().get_visible_rect().size.x - delivery_label.size.x) * 0.5), roundf(y))
-	if is_instance_valid(_car):
-		_car.mass = _car.config.mass + (float(delivery.get("kg", 0.0)) if delivery.has("cargo_hp") else 0.0)
 	if is_instance_valid(_cargo):
 		_cargo.visible = delivery.has("cargo_hp")
 	if cargo_label != null:

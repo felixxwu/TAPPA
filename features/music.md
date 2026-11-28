@@ -72,7 +72,7 @@ calls `_update_loading_edge`, which watches the `loading_screen` group and, on i
 rising edge (empty → present), calls
 `MusicLibrary.random_rally_song(_current_rally_song)` and
 `MusicLibrary.random_menu_song(_current_menu_song)` — each a uniformly random pool
-entry, **never the one just played** (no back-to-back repeat within that pool).
+entry (`RngStreams.shared("music")`), **never the one just played** (no back-to-back repeat within that pool).
 So a fresh song is chosen for whichever context is entered next each time an event
 loads / you return to HQ / the next event begins, and it's held for that whole
 visit (every HQ-scene frame resolves to the same locked-in HQ song, every non-HQ
@@ -188,7 +188,9 @@ still shows the raw slider position.
 
 ## Clock & robustness
 
-The scheduler clock is a **monotonic wall clock** (`Time.get_ticks_usec()`).
+The scheduler clock is a **monotonic wall clock** (`Time.get_ticks_usec()`). In a golden
+replay (`Benchmark.golden`, see `benchmark.md`) `music_director.gd` → `_audio_now` counts
+physics ticks instead, so the music grid plays out identically on every run.
 `AudioStreamPlayer.get_playback_position()` was the original plan, but it does
 **not** advance for an `AudioStreamPolyphonic` stream (no single timeline), so it
 cannot be used — the wall clock decides *when* to launch voices instead.

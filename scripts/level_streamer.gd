@@ -84,6 +84,7 @@ var stat_near_misses := 0
 var near_build_s := 0.25
 var _miss_tile := Vector2i(1 << 30, 1 << 30)
 var _plan_us := 0
+var _clock_us := 1  # golden replays' clock: frame time summed, so streaming decisions never read the wall clock
 var _starved := 0  # frames in a row the queue ran only the car's path
 
 
@@ -294,11 +295,17 @@ func _process(delta: float) -> void:
 	if focus == null:
 		return
 	var start := Time.get_ticks_usec()
+	_clock_us += int(delta * 1e6)
 	_plan_timer -= delta
 	if _chunk_of(_focus_xz()) != _plan_coord or _plan_timer <= 0.0:
 		_plan()
 	_guard_collision()
 	_count_near_miss()
+	if Benchmark.golden:  # a golden replay builds everything due each frame, so no frame budget decides what exists
+		_run_all()
+		_settle_cover()
+		PerfLog.track(&"terrain_streamer", Time.get_ticks_usec() - start)
+		return
 	var deadline := start + budget_us(delta)
 	_run_queue(deadline)
 	var mid := Time.get_ticks_usec()
@@ -353,7 +360,7 @@ func near_overdue() -> bool:
 
 # Some unbuilt near tile on the car's path is due within `within_s` seconds.
 func _path_due(within_s: float) -> bool:
-	var since_s := (Time.get_ticks_usec() - _plan_us) / 1e6
+	var since_s := (_now_us() - _plan_us) / 1e6
 	for list: Array[ChunkJob] in [_queue, _inflight]:
 		for job in list:
 			if job.tile and not job.with_collision and not job.cancelled and job.stage != Stage.DONE \
@@ -376,11 +383,29 @@ func _run_all() -> void:
 		_run_queue(deadline)
 
 
+# The clock streaming decisions run on: frame time summed in a golden replay, the wall clock otherwise.
+func _now_us() -> int:
+	return _clock_us if Benchmark.golden else Time.get_ticks_usec()
+
+
+# Builds every cover tile in reach of the focus, with no budget.
+func _settle_cover() -> void:
+	while focus != null and (not cover.missing(_focus_xz()).is_empty() or cover.pending() > 0):
+		cover.stream(_focus_xz(), Time.get_ticks_usec() + 60_000_000, _brush())
+		if cover.pending() > 0:
+			OS.delay_usec(200)
+
+
 # prefill() in slices of prefill_slice_ms with a frame between, so the loading screen keeps drawing; then every cover
 # tile in reach, so the spawn shows cover from its first frame.
 func prefill_async() -> void:
 	_plan()
 	_prefilling = true
+	if Benchmark.golden:  # in one go: wall-clock slices would make the frame count before the replay vary by machine
+		_run_all()
+		_prefilling = false
+		_settle_cover()
+		return
 	while not _queue.is_empty() or not _inflight.is_empty():
 		var deadline := Time.get_ticks_usec() + int(settings.prefill_slice_ms * 1000.0)
 		_run_queue(deadline)
@@ -471,7 +496,7 @@ func _run_queue(deadline: int) -> void:
 		var threaded := job.stage <= Stage.HEIGHTS and job.cursor == 0 and _threads_ok()
 		var stop := Stage.HEIGHTS if threaded else Stage.DONE
 		if job.started_us == 0 and not threaded:
-			job.started_us = Time.get_ticks_usec()
+			job.started_us = _now_us()
 		if not _step(job, deadline, stop):
 			if job.priority < SKIPPABLE_PRIORITY:
 				return
@@ -496,7 +521,7 @@ func _dispatch_build(job: ChunkJob) -> void:
 	_begin_pack(job)
 	if job.tile:
 		job.stitch = _stitch_mask(job.coord)
-		job.started_us = Time.get_ticks_usec()
+		job.started_us = _now_us()
 	# Godot runs low-priority tasks on under a third of its threads; the car's path and collision can't wait behind grass.
 	var urgent := job.priority <= STARVE_ABOVE
 	job.task_id = WorkerThreadPool.add_task(_build_job.bind(job), urgent, "chunk build")
@@ -967,7 +992,7 @@ func _attach(job: ChunkJob) -> void:
 			ts.near_heights = job.heights
 			ts.near_job = null
 			if job.started_us > 0 and job.eta_s <= _near_lead_s():
-				var took := minf((Time.get_ticks_usec() - job.started_us) / 1e6, _near_lead_s())
+				var took := minf((_now_us() - job.started_us) / 1e6, _near_lead_s())
 				near_build_s = lerpf(near_build_s, took, 0.2)
 			# collision built from the coarser mid grid is redone from this one
 			job.with_collision = ts.body != null and ts.body_level != Level.NEAR
@@ -1280,7 +1305,7 @@ func _plan() -> void:
 						ts.col_job.priority = d - 2000.0
 	# Near tiles: every tile within near_reach() of the car, kept a little past it.
 	var tm := settings.near_tile_m
-	_plan_us = Time.get_ticks_usec()
+	_plan_us = _now_us()
 	var wanted := wanted_near_tiles(here, vel)
 	for t: Vector2i in _tiles.keys():
 		var ts: TileState = _tiles[t]

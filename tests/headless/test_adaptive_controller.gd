@@ -162,13 +162,13 @@ func test_saved_state_round_trips_and_bad_entries_are_ignored() -> void:
 	var c := _controller([_knob(&"a", 4, 1, 1.0), _knob(&"b", 4, 2, 1.0)])
 	var saved := c.to_dict()
 	var d := _controller([_knob(&"a", 4, 3, 1.0), _knob(&"b", 4, 3, 1.0)])
-	d.from_dict(saved)
+	d.from_dict(saved, 0.0)
 	assert_eq([d.knobs[0].level, d.knobs[1].level], [1, 2])
-	d.from_dict({"knobs": {"a": {"level": 99, "cost_ms": "x"}, "gone": {"level": 1}, "b": "junk"}})
+	d.from_dict({"knobs": {"a": {"level": 99, "cost_ms": "x"}, "gone": {"level": 1}, "b": "junk"}}, 0.0)
 	assert_eq(d.knobs[0].level, 3, "a level past the top is clamped")
 	assert_true(is_finite(d.knobs[0].cost_ms))
-	d.from_dict("not a dict")
-	d.from_dict(null)
+	d.from_dict("not a dict", 0.0)
+	d.from_dict(null, 0.0)
 	assert_eq(d.knobs[1].level, 2, "garbage changes nothing")
 
 

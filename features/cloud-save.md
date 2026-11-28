@@ -260,7 +260,7 @@ PATCH and calls the difference a conflict.
 a retry, a resume pull, the exit flush — and `_push_inner` re-checks it after its token await,
 since it copies the profile only then.
 
-Failures back off exponentially (2 s → 60 s, jittered). The retry queue is a
+Failures back off exponentially (2 s → 60 s, jittered from `RngStreams.make("cloud_sync")`). The retry queue is a
 single "dirty" bit, not a list of operations — the payload is always the whole
 current profile, so a retry can never apply stale data.
 

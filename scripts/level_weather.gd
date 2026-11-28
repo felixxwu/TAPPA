@@ -38,7 +38,7 @@ static func attach(level: LevelView, snow: Callable) -> void:
 		node.view = level
 		node.snow_fn = snow
 		if seed_value == 0:
-			seed_value = randi() | 1
+			seed_value = RngStreams.make("weather").randi() | 1
 		parent.add_child(node)
 	node.start()
 
@@ -138,11 +138,14 @@ func start() -> void:
 	_show(_wanted(), true)
 
 
-func _process(dt: float) -> void:
+func _physics_process(dt: float) -> void:
 	drive_time += dt
 	var want := _wanted()
 	if want != _shown:
 		_show(want, false)
+
+
+func _process(dt: float) -> void:
 	_step(dt)
 
 

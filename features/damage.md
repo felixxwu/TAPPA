@@ -231,8 +231,8 @@ engine.rev_limit_scale = damage.rev_limit_fraction(cfg) # lerp 1 → damage_rev_
   limiter it does **not** fire the exhaust crackle (that pop is limiter-only;
   `engine_audio.gd` passes `engine.fuel_cut` to duck but only `engine.limiting` as
   the crackle trigger). The pure
-  `EngineSim.misfire_rate()` is unit-testable, and a seeded per-engine RNG makes the
-  cuts reproducible). This **replaces** the old `power_scale` / `damage_power_loss_max`.
+  `EngineSim.misfire_rate()` is unit-testable, and a seeded per-engine RNG (`RngStreams.make("engine")`, see
+  [determinism.md](determinism.md)) makes the cuts reproducible). This **replaces** the old `power_scale` / `damage_power_loss_max`.
   Each cut also puffs a burst of bonnet smoke — see [engine-smoke.md](engine-smoke.md).
 - **Rev cap** (`DamageModel.rev_limit_fraction` → `EngineSim.rev_limit_scale`) — a damaged
   engine also **won't pull to the top end**. The fraction lerps from `1.0` (full revs) down
