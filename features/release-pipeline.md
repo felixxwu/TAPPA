@@ -95,7 +95,7 @@ Run with a logged-in wrangler (`npx wrangler@4 login`) or the same token CI uses
 npx wrangler@4 r2 bucket create tappa-builds
 # Old builds are only needed by tabs left open; drop them after 30 days (R2's free tier is 10 GB).
 npx wrangler@4 r2 bucket lifecycle add tappa-builds expire-old-builds b/ --expire-days 30
-npx wrangler@4 pages project create tappa --production-branch main
+npx wrangler@4 pages project create tappa --production-branch main --force  # --force: wrangler otherwise tries to make a Workers project and fails
 ```
 
 Then in the dashboard: Workers & Pages → `tappa` → Custom domains → add
