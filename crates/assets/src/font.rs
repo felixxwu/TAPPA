@@ -64,8 +64,10 @@ impl Font {
         };
         let mut out = Vec::new();
         for cp in 0x20..=0xFFu32 {
-            let find = |d: &SizeData| d.glyphs.iter().find(move |g| g[0] as u32 == cp);
-            let (Some(a), Some(b)) = (find(small), find(big)) else {
+            fn find(d: &SizeData, cp: u32) -> Option<&Glyph> {
+                d.glyphs.iter().find(|g| g[0] as u32 == cp)
+            }
+            let (Some(a), Some(b)) = (find(small, cp), find(big, cp)) else {
                 out.push(format!("U+{cp:04X}: missing at one size"));
                 continue;
             };
