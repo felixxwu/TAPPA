@@ -20,11 +20,10 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | File | Responsibility |
 |---|---|
 | `scripts/cloud/cloud_manager.gd` | The **`Cloud` autoload** — the facade the game talks to. Owns the other four. |
-| `scripts/cloud/firebase_config.gd` | `FirebaseConfig` — project id, API key, OAuth client ids, endpoint builders. |
+| `scripts/cloud/firebase_config.gd` | `FirebaseConfig` — project id, API key, endpoint builders. |
 | `scripts/cloud/rest_client.gd` | `RestClient` — the ONLY `HTTPRequest` in the project. The test seam. |
-| `scripts/cloud/auth_service.gd` | `AuthService` — sign-in, token refresh, credential storage, error mapping. |
+| `scripts/cloud/auth_service.gd` | `AuthService` — session adoption (`_identity_call`), token refresh, credential storage, error mapping. |
 | `scripts/cloud/cloud_sync.gd` | `CloudSync` — Firestore document encoding, the conflict model, debounce/backoff. |
-| `scripts/cloud/google_sign_in.gd` | `GoogleSignIn` — the OAuth dance (two platform implementations). Back on the account page cancels a sign-in waiting on the browser (`cancel`). |
 | `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page. |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()`. |
@@ -38,11 +37,13 @@ save layer and its tests behave identically whether or not cloud save exists.
 
 ## Authentication
 
-Two methods, both through Identity Toolkit REST:
-
-- **Email + password** (`accounts:signInWithPassword` / `signUp`), plus password
-  reset via `accounts:sendOobCode`.
-- **Google** (`accounts:signInWithIdp`) — see below.
+**No sign-in method is wired up right now.** Google sign-in and email + password
+were removed on 2026-11-28 (step 0.2 of `todo/2026-11-27-rust-native-migration.md`;
+read the old code from git history). Email-link sign-in (`accounts:sendOobCode` +
+`accounts:signInWithEmailLink`, step 0.3) replaces both. What stays is everything a
+sign-in method plugs into: `AuthService._identity_call` (POST to Identity Toolkit,
+adopt the returned session), token refresh, `auth.json` and Firestore sync, so an
+already-signed-in device keeps syncing.
 
 **Anonymous ("guest") sign-in was deliberately NOT built**, despite Firebase
 offering it and it being an obvious third option. It would protect against
@@ -56,54 +57,6 @@ whatever progress is on the device. Not signing in IS the no-account state; it
 needs no button. Do not add it back without a reason that survives that
 argument.
 
-### Google sign-in — one native flow, one web flow
-
-**Native (Windows, macOS, *and Android*): loopback redirect + PKCE.** Bind a
-`TCPServer` on `127.0.0.1` (port 0, never `0.0.0.0`), `OS.shell_open` Google's
-consent screen with `redirect_uri=http://127.0.0.1:<port>`, catch the single
-inbound GET, verify the `state` nonce, and exchange the code with the PKCE
-verifier. No client secret — a desktop OAuth client is a public client and PKCE
-is what authenticates the exchange.
-
-Including Android in this path is the single biggest simplification in the
-design: the obvious alternative (a custom URL scheme / deep link) needs an
-`AndroidManifest` intent-filter, which needs a custom Godot Android build, which
-this project does not have. A loopback listener needs none of it.
-
-**Android caveat — the player must return to the game.** Handing off to the
-system browser BACKGROUNDS the game, and Godot stops running frames while
-backgrounded, so the redirect is accepted off the frame loop on a `Thread`
-(`_serve_callback`). `_serve_on_main_loop` is the fallback when the thread can't start:
-there the connection waits until the player switches back. `GoogleSignIn.waiting_message()`
-tells touch players to come back to the game either way.
-
-The `permissions/internet=true` flag on BOTH Android presets in
-`export_presets.cfg` is required — without it Android blocks `HTTPRequest` *and*
-binding the loopback listener, which presents as "no connection" plus
-"couldn't start the sign-in listener".
-
-**Web: a top-level popup, landing on a GitHub Pages callback.** `window.open`
-to Google's auth endpoint with `response_type=id_token`, redirecting to
-`docs/oauth-callback.html` (served at `felixxwu.github.io/TAPPA/` by the
-`deploy-pages` job), which `postMessage`s the token back to the game window and
-closes. It only posts to the game's own hosts (an allowlist in that page), because any site can
-open this flow with a crafted `state`; a new web host must be added there. Known limit: `html.itch.zone` is shared by every itch game, so another itch game could still receive the token if a player approves it. Driven over `JavaScriptBridge` with the same `create_callback` +
-member-held-handle pattern as `save_manager.gd`'s lifecycle hook.
-
-`response_type=id_token` rather than an authorization code, because a code has
-to be exchanged for tokens and Google requires a `client_secret` for **Web**
-clients — which a browser cannot hold. The implicit response returns a signed ID
-token directly, which is what `AuthService` needs; `nonce` guards replay and
-`state` is verified before the token is accepted.
-
-**Google Identity Services was tried first and does not work on itch.** One Tap
-renders inside the calling document, which there is itch's iframe, and FedCM
-refuses without an `allow="identity-credentials-get"` grant from the *embedding*
-page — itch's markup, not ours. Measured with the origin correctly authorised:
-`NotAllowedError: The 'identity-credentials-get' feature is not enabled in this
-document`. A popup is a top-level browsing context, so none of that applies.
-Do not "simplify" this back to GIS.
-
 ### Credential storage — the trap
 
 Tokens live in **`user://auth.json`**, never in the profile.
@@ -112,8 +65,7 @@ Tokens live in **`user://auth.json`**, never in the profile.
 parked there would publish a long-lived credential into the database and
 replicate it to every other device on the account. `auth.json` holds the refresh
 token, uid and email; the short-lived `id_token` is kept in memory
-only and never written; the password is never stored anywhere.
-`test_cloud_auth.gd` asserts all three of those.
+only and never written. `test_cloud_auth.gd` asserts both.
 
 ## The Firestore document
 
@@ -299,7 +251,7 @@ already-plain body with `RESULT_BODY_DECOMPRESS_FAILED` (transport code 8) on an
 HTTP **200**.
 
 Google's endpoints gzip their responses, so this broke EVERY cloud request on
-the web build — email and Google sign-in alike — and surfaced to the player as
+the web build and surfaced to the player as
 "No connection", which sent the investigation towards CORS for some time. If web
 requests ever start failing on a 200 again, check this first.
 
@@ -337,10 +289,11 @@ it, first clearing `_driving` so leaving doesn't save this device's spot over th
   `_build_list_page` to bring it back.
 It is the only host: two routes into one optional form is one more than the game needs.
 
-Signed out: Google (hidden when unconfigured) / sign in with email / create an
-account. There is deliberately no "continue without an account" button — that is
-what closing the page does, and the Back button already says so. Signed in:
-identity, sync status, Sync now, Sign out.
+Signed out: a line explaining the account, and no sign-in button until email-link
+sign-in lands (step 0.3). There is deliberately no "continue without an account"
+button — that is what closing the page does. Signed in: identity, sync status,
+Sync now, Sign out. `AccountMenu.go_back` holds Back only while a cloud call is in
+flight.
 
 **Row budget.** A host that puts `AccountMenu` in a CENTRED `VBoxContainer` with its
 Back button BELOW the widget lets any content that overflows a small screen push Back
@@ -448,24 +401,15 @@ deliberately not a silent pick of either side.
 
 ## Setup prerequisites (console work)
 
-1. Authentication → enable **Email/Password** and **Google**. (Anonymous is
-   deliberately unused — see above.)
-2. Enabling Google auto-creates a **Web** OAuth client → `GOOGLE_WEB_CLIENT_ID`.
-3. Google Cloud → Credentials → **OAuth client ID → Desktop app** →
-   `GOOGLE_DESKTOP_CLIENT_ID`, plus its **client secret** into
-   `GOOGLE_DESKTOP_CLIENT_SECRET`. Google requires the secret even with PKCE,
-   and the console no longer reveals an existing one — use "+ Add secret".
-   Only desktop-type clients may use loopback redirects; the web client may not.
-4. On the **Web** client: `https://html.itch.zone` under *Authorised JavaScript
-   origins*, and `https://felixxwu.github.io/TAPPA/oauth-callback.html` under
-   *Authorised redirect URIs*. Both are exact-match.
-4. Firestore → create the database (Native mode). The **rules deploy is
+1. Authentication → enable **Email/Password** with **Email link** sign-in.
+   (Anonymous is deliberately unused — see above.) The Google provider and its
+   OAuth clients are no longer used by the game and can be switched off.
+2. Firestore → create the database (Native mode). The **rules deploy is
    automated** — see below.
-5. Auth → Settings → **Authorised domains** → add the itch.io origin.
+3. Auth → Settings → **Authorised domains** → add the web build's origin.
 
-Both client-id constants are **empty** until step 2/3 are done;
-`FirebaseConfig.google_configured()` is false meanwhile and the UI hides the
-Google button rather than offering an option that cannot work.
+Android needs `permissions/internet=true` on BOTH presets in `export_presets.cfg`,
+or every `HTTPRequest` fails as "no connection".
 
 ### The rules file is deployed by CI, and a broken one fails SILENTLY
 
@@ -527,10 +471,9 @@ data.
 - `tests/headless/fake_rest_client.gd` — the stand-in for `RestClient`. A real
   coroutine (it awaits a frame), so code under test takes the same await path it
   takes against a live network.
-- `tests/headless/test_cloud_auth.gd` — each sign-in path's endpoint and body,
-  local validation short-circuits, mapped **and unmapped** error codes,
-  network-vs-auth refresh failure, credential persistence and the three
-  "no credential in the profile / no password on disk" guards.
+- `tests/headless/test_cloud_auth.gd` — session adoption through
+  `_identity_call`, mapped **and unmapped** error codes, network-vs-auth refresh
+  failure, credential persistence and the "no credential in the profile" guard.
 - `tests/headless/test_cloud_sync.gd` — document encoding (incl. the
   integer-as-string trap), every row of the conflict matrix, all three
   resolutions, the `.conflict.bak`, failure classification, backoff growth and
@@ -547,21 +490,6 @@ data.
 None of this can be exercised headlessly, so this list is the acceptance check.
 Record results here as they land.
 
-- [x] **Google sign-in on macOS (loopback + PKCE)** — passes, 2026-07-31. Getting
-      there needed one fix: Google requires the Desktop client's `client_secret`
-      in the token exchange (its docs exempt only Android, iOS and Chrome
-      clients), so a PKCE-only exchange failed with
-      `invalid_request: client_secret is missing`.
-- [x] **Google + email sign-in on the itch web build** — both pass, 2026-07-31.
-      Took four separate fixes: the itch origin authorised, SharedArrayBuffer
-      (COOP) turned off so the popup could talk back, the game's origin carried
-      through OAuth `state`, and — the one that broke everything — `accept_gzip`
-      disabled on web.
-- [x] **Google sign-in on Android (loopback)** — passes, 2026-07-31, with the
-      INTERNET permission and the threaded callback listener.
-- [ ] Email register → sign out → sign in, on desktop.
-- [ ] Email sign-in on Android (retest — the INTERNET permission should have
-      fixed it, unverified).
 - [ ] Two-device round trip: progress on desktop → sign in on phone → it appears.
 - [ ] Genuine divergence: play offline on both, reconnect, confirm the prompt.
 - [ ] Airplane mode mid-session: no hang, no data loss, sync resumes.

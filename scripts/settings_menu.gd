@@ -293,8 +293,7 @@ func at_root() -> bool:
 func go_back() -> bool:
 	if at_root():
 		return false
-	# The account page has its own sub-forms (sign in / register / reset), so give
-	# it first refusal before backing out of the page entirely.
+	# The account page holds Back while a cloud call is in flight.
 	if _account_page != null and _account_page.visible and _account != null \
 			and _account.go_back():
 		return true

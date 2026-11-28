@@ -36,11 +36,16 @@ func _session(local_id := "uid123", mail := "player@example.com") -> Dictionary:
 	}
 
 
-# --- Sign-in paths ------------------------------------------------------------
+# Every sign-in goes through _identity_call, so that is what these drive.
+func _sign_in() -> Dictionary:
+	return await _auth._identity_call("signInWithEmailLink", {"returnSecureToken": true})
 
-func test_email_sign_in_stores_the_session() -> void:
+
+# --- Sign-in --------------------------------------------------------------------
+
+func test_a_sign_in_stores_the_session() -> void:
 	_rest.queue_ok(_session())
-	var result: Dictionary = await _auth.sign_in_email("player@example.com", "hunter2")
+	var result: Dictionary = await _sign_in()
 	assert_true(result.ok, "a 200 with a session should sign the player in")
 	assert_eq(_auth.uid, "uid123")
 	assert_eq(_auth.email, "player@example.com")
@@ -48,51 +53,14 @@ func test_email_sign_in_stores_the_session() -> void:
 	assert_true(_auth.is_signed_in())
 
 
-func test_email_sign_in_targets_the_password_endpoint() -> void:
-	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
-	assert_string_contains(String(_rest.last()["url"]), "accounts:signInWithPassword")
-	var body := _rest.last_body()
-	assert_eq(body.get("email", ""), "player@example.com")
-	assert_true(body.get("returnSecureToken", false),
-		"without returnSecureToken there is no refresh token to persist")
-
-
-func test_google_sign_in_posts_the_provider_body() -> void:
-	_rest.queue_ok(_session())
-	await _auth.sign_in_with_google("google-token")
-	assert_string_contains(String(_rest.last()["url"]), "accounts:signInWithIdp")
-	assert_string_contains(String(_rest.last_body().get("postBody", "")), "providerId=google.com")
-
-
-func test_google_sign_in_without_a_token_makes_no_request() -> void:
-	var result: Dictionary = await _auth.sign_in_with_google("")
-	assert_false(result.ok)
-	assert_eq(_rest.requests.size(), 0, "an empty credential is a local cancel, not a request")
-
-
-# --- Local validation ---------------------------------------------------------
-
-func test_a_malformed_email_is_rejected_without_a_request() -> void:
-	var result: Dictionary = await _auth.sign_in_email("not-an-email", "hunter2")
-	assert_false(result.ok)
-	assert_eq(_rest.requests.size(), 0, "obvious typos should not cost a round trip")
-
-
-func test_a_short_password_is_rejected_without_a_request() -> void:
-	var result: Dictionary = await _auth.register_email("player@example.com", "abc")
-	assert_false(result.ok)
-	assert_eq(_rest.requests.size(), 0)
-
-
 # --- Error mapping ------------------------------------------------------------
 
 func test_a_known_error_code_becomes_a_player_facing_message() -> void:
-	_rest.queue_error(400, "EMAIL_EXISTS")
-	var result: Dictionary = await _auth.register_email("player@example.com", "hunter2")
+	_rest.queue_error(400, "USER_DISABLED")
+	var result: Dictionary = await _sign_in()
 	assert_false(result.ok)
-	assert_string_contains(String(result.error).to_lower(), "already has an account")
-	assert_false(String(result.error).contains("EMAIL_EXISTS"),
+	assert_ne(String(result.error), "")
+	assert_false(String(result.error).contains("USER_DISABLED"),
 		"a mapped code should not leak the raw string at the player")
 
 
@@ -100,21 +68,22 @@ func test_an_unknown_error_code_still_yields_a_message_and_keeps_the_code() -> v
 	# The point of this one: an unmapped failure must stay diagnosable from a
 	# screenshot rather than collapsing into a generic "error".
 	_rest.queue_error(400, "SOME_FUTURE_FIREBASE_CODE")
-	var result: Dictionary = await _auth.sign_in_email("player@example.com", "hunter2")
+	var result: Dictionary = await _sign_in()
 	assert_false(result.ok)
 	assert_string_contains(String(result.error), "SOME_FUTURE_FIREBASE_CODE")
 
 
 func test_a_code_with_trailing_detail_still_maps() -> void:
-	# Firebase suffixes some codes ("WEAK_PASSWORD : Password should be...").
-	_rest.queue_error(400, "WEAK_PASSWORD : Password should be at least 6 characters")
-	var result: Dictionary = await _auth.sign_in_email("player@example.com", "hunter2")
-	assert_string_contains(String(result.error).to_lower(), "at least 6 characters")
+	# Firebase suffixes some codes ("TOO_MANY_ATTEMPTS_TRY_LATER : Access ...").
+	_rest.queue_error(400, "TOO_MANY_ATTEMPTS_TRY_LATER : Access to this account has been disabled")
+	var result: Dictionary = await _sign_in()
+	assert_false(String(result.error).contains("TOO_MANY_ATTEMPTS_TRY_LATER"),
+		"the detail must not stop the code mapping")
 
 
 func test_a_network_failure_is_reported_as_a_network_failure() -> void:
 	_rest.queue_offline()
-	var result: Dictionary = await _auth.sign_in_email("player@example.com", "hunter2")
+	var result: Dictionary = await _sign_in()
 	assert_false(result.ok)
 	assert_true(result.get("network", false),
 		"callers branch on this to retry instead of signing the player out")
@@ -124,7 +93,7 @@ func test_a_network_failure_is_reported_as_a_network_failure() -> void:
 
 func test_a_valid_token_is_not_refreshed() -> void:
 	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
+	await _sign_in()
 	var before: int = _rest.requests.size()
 	var result: Dictionary = await _auth.ensure_fresh_token()
 	assert_true(result.ok)
@@ -133,7 +102,7 @@ func test_a_valid_token_is_not_refreshed() -> void:
 
 func test_an_expiring_token_is_refreshed() -> void:
 	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
+	await _sign_in()
 	_auth.expires_at = Time.get_unix_time_from_system() + 1.0  # inside the margin
 	_rest.queue_ok({"id_token": "fresh", "refresh_token": "r2", "user_id": "uid123",
 		"expires_in": "3600"})
@@ -147,7 +116,7 @@ func test_a_network_failure_during_refresh_does_not_sign_out() -> void:
 	# Being offline must never cost the player their account — this is the whole
 	# reason refresh distinguishes transport failures from rejections.
 	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
+	await _sign_in()
 	_auth.expires_at = 0.0
 	_rest.queue_offline()
 	var result: Dictionary = await _auth.ensure_fresh_token()
@@ -157,7 +126,7 @@ func test_a_network_failure_during_refresh_does_not_sign_out() -> void:
 
 func test_a_rejected_refresh_signs_out_and_reports_it() -> void:
 	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
+	await _sign_in()
 	_auth.expires_at = 0.0
 	watch_signals(_auth)
 	_rest.queue_error(400, "TOKEN_EXPIRED")
@@ -169,7 +138,7 @@ func test_a_rejected_refresh_signs_out_and_reports_it() -> void:
 
 func test_a_server_outage_during_refresh_does_not_sign_out() -> void:
 	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
+	await _sign_in()
 	for status in [429, 503]:
 		_auth.expires_at = 0.0
 		_rest.queue_error(status)
@@ -182,7 +151,7 @@ func test_a_server_outage_during_refresh_does_not_sign_out() -> void:
 
 func test_the_session_survives_a_restart() -> void:
 	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
+	await _sign_in()
 
 	var restored := AuthService.new()
 	restored.rest = _rest
@@ -194,18 +163,9 @@ func test_the_session_survives_a_restart() -> void:
 		"the short-lived token is never persisted — it is refreshed on first use")
 
 
-func test_the_credential_file_holds_no_password() -> void:
-	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "correct-horse")
-	var f := FileAccess.open(TEST_AUTH_PATH, FileAccess.READ)
-	var text := f.get_as_text()
-	f.close()
-	assert_false(text.contains("correct-horse"), "the password must never be written to disk")
-
-
 func test_signing_out_clears_the_stored_credential() -> void:
 	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
+	await _sign_in()
 	_auth.sign_out()
 	assert_false(_auth.is_signed_in())
 	var restored := AuthService.new()
@@ -219,7 +179,7 @@ func test_credentials_are_not_stored_in_the_uploaded_profile() -> void:
 	# ["settings"] is inside the blob uploaded to Firestore, so a token parked
 	# there would be published to the database.
 	_rest.queue_ok(_session())
-	await _auth.sign_in_email("player@example.com", "hunter2")
+	await _sign_in()
 	var blob := JSON.stringify(Save.profile)
 	assert_false(blob.contains("refresh-token"),
 		"the refresh token must live in auth.json, never in the synced profile")

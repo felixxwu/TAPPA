@@ -8,19 +8,12 @@ extends VBoxContainer
 # the page is small, it is never on screen during gameplay, and a full rebuild
 # cannot leave a stale label behind.
 
-enum View { MAIN, SIGN_IN, REGISTER, RESET }
-
-var _view: int = View.MAIN
 var _busy := false
 # The live shared busy state while a cloud call is in flight, else null.
 # See scripts/cloud/cloud_busy.gd and _begin/_finish below.
 var _busy_state: CloudBusy = null
 var _message := ""
 var _message_role := "dim"
-
-var _email_field: TextField
-var _password_field: TextField
-var _confirm_field: TextField
 # NO modal latches here. "Is a prompt already up?" is asked of the scene tree via
 # ConfirmPopup.MODAL_GROUP — this page can be instantiated three times over, so a
 # per-instance bool was never able to answer it.
@@ -39,21 +32,9 @@ func _ready() -> void:
 
 # --- Host-facing API ----------------------------------------------------------
 
-# True while the top-level account view is showing (vs a form). Mirrors
-# SettingsMenu.at_root() so the two hosts can treat both the same way.
-func at_root() -> bool:
-	return _view == View.MAIN
-
-
-# Step back one level. Returns true when it consumed the press.
+# Returns true when it consumed the press: a request in flight holds the page.
 func go_back() -> bool:
-	if _busy:
-		Cloud.google.cancel()  # a sign-in waiting on the browser would hold this page for minutes
-		return true  # a request is in flight; swallow rather than half-leave
-	if at_root():
-		return false
-	_show(View.MAIN)
-	return true
+	return _busy
 
 
 func focus_first() -> void:
@@ -77,19 +58,7 @@ func rebuild() -> void:
 			continue
 		remove_child(child)
 		child.queue_free()
-	_email_field = null
-	_password_field = null
-	_confirm_field = null
-
-	match _view:
-		View.SIGN_IN:
-			_build_email_form("Sign in", _on_sign_in_pressed)
-		View.REGISTER:
-			_build_email_form("Create account", _on_register_pressed, true)
-		View.RESET:
-			_build_reset_form()
-		_:
-			_build_main()
+	_build_main()
 
 	if _message != "":
 		add_child(UITheme.label(_message, _message_role))
@@ -115,7 +84,7 @@ func rebuild() -> void:
 	# layer-101 CanvasLayer that seizes focus, so raising it from a page parked
 	# inside a hidden overlay would throw a dialog over the game (or, in
 	# a test run, over whatever the test was driving).
-	if at_root() and MenuNav.is_on_screen(self) \
+	if MenuNav.is_on_screen(self) \
 			and Cloud.sync != null and Cloud.sync.blocked_by_conflict:
 		_prompt_conflict.call_deferred(Cloud.sync.conflict_summary())
 
@@ -131,10 +100,6 @@ func _build_main() -> void:
 	if not Cloud.is_signed_in():
 		add_child(_sub("Sign in to back your career up and continue it on another device. "
 			+ "This is optional — your progress is always saved on this device."))
-		if FirebaseConfig.google_configured():
-			add_child(_action("Sign in with Google", _on_google_pressed))
-		add_child(_action("Sign in with email", func() -> void: _show(View.SIGN_IN)))
-		add_child(_action("Create an account", func() -> void: _show(View.REGISTER)))
 		return
 
 	add_child(_sub("Signed in as %s" % Cloud.account_label()))
@@ -161,54 +126,6 @@ func _build_main() -> void:
 	add_child(_action("Sign out", _on_sign_out_pressed))
 
 
-func _build_email_form(action_label: String, on_submit: Callable, confirm := false) -> void:
-	add_child(_heading(action_label))
-	_email_field = TextField.new("Email", "you@example.com")
-	_password_field = TextField.new("Password", "at least 6 characters", true)
-	add_child(_email_field)
-	add_child(_password_field)
-	var column: Array = [_email_field, _password_field]
-	if confirm:
-		_confirm_field = TextField.new("Confirm password", "", true)
-		add_child(_confirm_field)
-		column.append(_confirm_field)
-
-	# NOTE the add_child on every row: _action() only BUILDS a button, it does not
-	# parent it. Forgetting that here once shipped a form with no buttons at all.
-	var submit := _action(action_label, on_submit)
-	add_child(submit)
-	column.append(submit)
-	if _view == View.SIGN_IN:
-		var forgot := _action("Forgot password?", func() -> void: _show(View.RESET))
-		add_child(forgot)
-		column.append(forgot)
-	var back := _action("< Back", func() -> void: _show(View.MAIN))
-	add_child(back)
-	column.append(back)
-
-	# Enter in any field submits the form — the ordinary expectation, and the only
-	# way to submit at all on a phone where the on-screen keyboard covers the button.
-	_email_field.submitted.connect(on_submit)
-	_password_field.submitted.connect(on_submit)
-	if _confirm_field != null:
-		_confirm_field.submitted.connect(on_submit)
-
-	TextField.wire_column(column)
-
-
-func _build_reset_form() -> void:
-	add_child(_heading("Reset password"))
-	add_child(_sub("We'll email you a link to set a new password."))
-	_email_field = TextField.new("Email", "you@example.com")
-	add_child(_email_field)
-	var send := _action("Send reset email", _on_reset_pressed)
-	add_child(send)
-	var back := _action("< Back", func() -> void: _show(View.SIGN_IN))
-	add_child(back)
-	_email_field.submitted.connect(_on_reset_pressed)
-	TextField.wire_column([_email_field, send, back])
-
-
 # --- Actions ------------------------------------------------------------------
 # Each handler follows the same shape: _begin() puts the page in its busy state
 # (or refuses, if something is already in flight), then the operation runs, then
@@ -218,44 +135,6 @@ func _build_reset_form() -> void:
 # these operations are coroutines (anything that touches the network) and some
 # are purely local, and awaiting a non-coroutine is both a warning and a lie
 # about what the code does. Spelling each one out keeps that honest.
-
-func _on_google_pressed() -> void:
-	# Platform-specific wording: on a phone the game is backgrounded while the
-	# browser has focus, and the player must come back for the sign-in to
-	# complete. See GoogleSignIn.waiting_message.
-	if not _begin(GoogleSignIn.waiting_message()):
-		return
-	_finish(await Cloud.sign_in_google())
-
-
-func _on_sign_in_pressed() -> void:
-	var address := _email_field.text()
-	var password := _password_field.line.text
-	if not _begin("Signing in…"):
-		return
-	if _finish(await Cloud.sign_in_email(address, password)):
-		_show(View.MAIN)
-
-
-func _on_register_pressed() -> void:
-	if not _passwords_match():
-		return
-	var address := _email_field.text()
-	var password := _password_field.line.text
-	if not _begin("Creating your account…"):
-		return
-	if _finish(await Cloud.register_email(address, password)):
-		_show(View.MAIN)
-
-
-func _on_reset_pressed() -> void:
-	var address := _email_field.text()
-	if not _begin("Sending…"):
-		return
-	if _finish(await Cloud.send_password_reset(address)):
-		_set_message("Check your inbox for the reset link.", "green")
-		rebuild()
-
 
 func _on_sync_now_pressed() -> void:
 	if not _begin("Syncing…"):
@@ -268,7 +147,7 @@ func _on_sign_out_pressed() -> void:
 	# cloud copy stays reachable by signing back in.
 	Cloud.sign_out()
 	_set_message("Signed out. Your progress on this device is unchanged.", "dim")
-	_show(View.MAIN)
+	rebuild()
 
 
 # --- Conflict -----------------------------------------------------------------
@@ -303,9 +182,7 @@ func _on_auth_lost(reason: String) -> void:
 
 
 func _on_cloud_state_changed() -> void:
-	# Only repaint the summary view; a rebuild mid-form would destroy the
-	# half-typed fields the player is looking at.
-	if at_root() and not _busy:
+	if not _busy:
 		rebuild()
 
 
@@ -348,22 +225,6 @@ func _finish(result: Dictionary) -> bool:
 	_set_message(CloudBusy.failure_text(result), "dim" if ok else "red")
 	rebuild()
 	return ok
-
-
-func _passwords_match() -> bool:
-	if _confirm_field == null:
-		return true
-	if _password_field.line.text == _confirm_field.line.text:
-		return true
-	_set_message("Those passwords don't match.", "red")
-	rebuild()
-	return false
-
-
-func _show(view: int) -> void:
-	_view = view
-	_message = ""
-	rebuild()
 
 
 func _set_message(text: String, role: String) -> void:

@@ -18,7 +18,7 @@ extends RefCounted
 signal signed_in(uid: String)
 signal signed_out()
 # Raised when an existing session could not be restored/refreshed for an
-# AUTH reason (revoked, disabled, password changed). A network failure does NOT
+# AUTH reason (revoked, disabled). A network failure does NOT
 # raise this — being offline must not sign anyone out.
 signal auth_lost(reason: String)
 
@@ -75,50 +75,6 @@ func _refuse_real_file(op: String) -> bool:
 
 func is_signed_in() -> bool:
 	return uid != "" and refresh_token != ""
-
-
-# --- Sign-in paths -----------------------------------------------------------
-# Each returns {ok: bool, error: String} where `error` is already player-facing.
-
-func sign_in_email(address: String, password: String) -> Dictionary:
-	var invalid := _validate_credentials(address, password)
-	if invalid != "":
-		return {"ok": false, "error": invalid}
-	return await _identity_call("signInWithPassword", {
-		"email": address, "password": password, "returnSecureToken": true,
-	})
-
-
-func register_email(address: String, password: String) -> Dictionary:
-	var invalid := _validate_credentials(address, password)
-	if invalid != "":
-		return {"ok": false, "error": invalid}
-	return await _identity_call("signUp", {
-		"email": address, "password": password, "returnSecureToken": true,
-	})
-
-
-# Exchange a Google ID token (obtained by GoogleSignIn) for a Firebase session.
-func sign_in_with_google(google_id_token: String) -> Dictionary:
-	if google_id_token == "":
-		return {"ok": false, "error": "Google sign-in was cancelled."}
-	return await _identity_call("signInWithIdp", {
-		"postBody": "id_token=%s&providerId=google.com" % google_id_token,
-		"requestUri": "http://localhost",
-		"returnSecureToken": true,
-	})
-
-
-func send_password_reset(address: String) -> Dictionary:
-	if not _looks_like_email(address):
-		return {"ok": false, "error": "That doesn't look like an email address."}
-	var response = await rest.request_json(
-		HTTPClient.METHOD_POST, FirebaseConfig.identity("sendOobCode"),
-		RestClient.json_headers(),
-		JSON.stringify({"requestType": "PASSWORD_RESET", "email": address}))
-	if not response.ok:
-		return {"ok": false, "error": _message_for(response)}
-	return {"ok": true, "error": ""}
 
 
 # --- Token lifecycle ---------------------------------------------------------
@@ -275,15 +231,6 @@ func _read_credentials() -> Dictionary:
 
 # --- Validation + error messages ---------------------------------------------
 
-func _validate_credentials(address: String, password: String) -> String:
-	if not _looks_like_email(address):
-		return "That doesn't look like an email address."
-	# Firebase's own floor is 6; checking locally avoids a pointless round trip.
-	if password.length() < 6:
-		return "Password must be at least 6 characters."
-	return ""
-
-
 func _looks_like_email(address: String) -> bool:
 	# Deliberately loose. Email validation by regex is a well-known losing game;
 	# the server is the real authority. This only catches obvious typos before
@@ -304,17 +251,11 @@ func _message_for(response: Dictionary) -> String:
 		var err: Variant = body.get("error", {})
 		if typeof(err) == TYPE_DICTIONARY:
 			code = String(err.get("message", ""))
-	# Firebase suffixes some codes with detail (e.g. "WEAK_PASSWORD : ...").
+	# Firebase suffixes some codes with detail (e.g. "TOO_MANY_ATTEMPTS_TRY_LATER : ...").
 	var head := code.split(" ")[0] if code != "" else ""
 	match head:
-		"EMAIL_EXISTS":
-			return "That email already has an account. Try signing in."
-		"EMAIL_NOT_FOUND", "INVALID_PASSWORD", "INVALID_LOGIN_CREDENTIALS":
-			return "Wrong email or password."
 		"USER_DISABLED":
 			return "This account has been disabled."
-		"WEAK_PASSWORD":
-			return "Password must be at least 6 characters."
 		"TOO_MANY_ATTEMPTS_TRY_LATER":
 			return "Too many attempts. Wait a few minutes and try again."
 		"OPERATION_NOT_ALLOWED":

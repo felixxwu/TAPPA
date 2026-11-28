@@ -58,8 +58,8 @@ func _ready() -> void:
 	# decompress the (already plain) body a second time. That fails with
 	# RESULT_BODY_DECOMPRESS_FAILED (8) on an otherwise perfect HTTP 200 —
 	# measured against identitytoolkit, which gzips its responses. Every cloud
-	# request on the web build failed this way, for both email and Google
-	# sign-in, and it surfaced to the player as "no connection".
+	# request on the web build failed this way, and it surfaced to the player as
+	# "no connection".
 	#
 	# Native keeps gzip: there the engine owns the transfer and decompresses
 	# correctly, and these payloads are small but not free.
@@ -147,8 +147,8 @@ static func form_headers() -> PackedStringArray:
 	return PackedStringArray(["Content-Type: application/x-www-form-urlencoded"])
 
 
-# Encode a flat dictionary as an x-www-form-urlencoded body (the OAuth token
-# endpoint and the securetoken refresh endpoint both want form encoding, not JSON).
+# Encode a flat dictionary as an x-www-form-urlencoded body (the securetoken
+# refresh endpoint wants form encoding, not JSON).
 static func form_encode(fields: Dictionary) -> String:
 	var parts: PackedStringArray = []
 	for key in fields:

@@ -52,7 +52,7 @@ func test_cloud_autoload_registered() -> void:
 	# until the player signs in, so its mere existence must never change anything.
 	var cloud := get_node_or_null("/root/Cloud")
 	assert_not_null(cloud, "Cloud autoload registered")
-	assert_true(cloud.has_method("sign_in_email"), "Cloud exposes sign_in_email()")
+	assert_true(cloud.has_method("sync_now"), "Cloud exposes sync_now()")
 	assert_false(cloud.is_signed_in(), "a fresh test run is signed out")
 
 

@@ -1,12 +1,9 @@
 extends GutTest
 # AccountMenu structure (see features/cloud-save.md › "UI").
 #
-# These are deliberately dumb "is the control actually on screen" checks rather
-# than assertions about wording or layout. They exist because the first version
-# of the sign-in forms BUILT their buttons and never parented them: every form
-# shipped with no Create account / Sign in / Back button, reachable only by
-# pressing Enter. Every widget the player must be able to press needs a test
-# that it is in the tree, because "it was constructed" is not the same thing.
+# Deliberately dumb "is the control actually on screen" checks rather than
+# assertions about wording or layout: a button that was built but never parented
+# once shipped, and "it was constructed" is not the same as "it can be pressed".
 
 var _menu: AccountMenu
 var _saved_uid := ""
@@ -58,58 +55,6 @@ func _has_button_containing(fragment: String) -> bool:
 	return false
 
 
-func test_signed_out_offers_a_way_in() -> void:
-	assert_true(_has_button_containing("sign in with email"),
-		"signed-out account page must offer email sign-in")
-	assert_true(_has_button_containing("create an account"))
-
-
-func test_the_register_form_has_a_submit_button() -> void:
-	# The exact regression: the form rendered with fields but nothing to press.
-	_menu._show(AccountMenu.View.REGISTER)
-	assert_true(_has_button_containing("create account"),
-		"the register form must have a button that submits it")
-	assert_true(_has_button_containing("back"), "and a way back out")
-
-
-func test_the_sign_in_form_has_its_buttons() -> void:
-	_menu._show(AccountMenu.View.SIGN_IN)
-	assert_true(_has_button_containing("sign in"))
-	assert_true(_has_button_containing("forgot password"))
-	assert_true(_has_button_containing("back"))
-
-
-func test_the_reset_form_has_its_buttons() -> void:
-	_menu._show(AccountMenu.View.RESET)
-	assert_true(_has_button_containing("send reset email"))
-	assert_true(_has_button_containing("back"))
-
-
-func test_the_register_form_has_three_fields() -> void:
-	_menu._show(AccountMenu.View.REGISTER)
-	assert_eq(_menu.find_children("*", "LineEdit", true, false).size(), 3,
-		"email, password and confirm password")
-
-
-func test_every_form_control_is_focusable() -> void:
-	# A control the cursor cannot reach is as good as absent on a gamepad.
-	_menu._show(AccountMenu.View.REGISTER)
-	for node in _menu.find_children("*", "Button", true, false):
-		assert_ne((node as Button).focus_mode, Control.FOCUS_NONE,
-			"button '%s' must be reachable by keyboard/gamepad" % (node as Button).text)
-	for node in _menu.find_children("*", "LineEdit", true, false):
-		assert_ne((node as LineEdit).focus_mode, Control.FOCUS_NONE,
-			"text fields must be reachable by keyboard/gamepad")
-
-
-func test_back_returns_to_the_main_view() -> void:
-	_menu._show(AccountMenu.View.REGISTER)
-	assert_false(_menu.at_root())
-	assert_true(_menu.go_back(), "a form consumes Back")
-	assert_true(_menu.at_root())
-	assert_false(_menu.go_back(), "at the top level Back belongs to the host")
-
-
 # --- The busy state (scripts/cloud/cloud_busy.gd) ------------------------------
 # This page used to own a private copy of "a cloud call is in flight". It now uses
 # the shared one, in its ambient shape. Assert the RELATIONSHIP and the controls,
@@ -123,13 +68,12 @@ func test_a_cloud_call_in_flight_shows_the_shared_busy_state() -> void:
 	assert_false(CloudBusy.showing(_menu), "which is gone once the call lands")
 
 
-func test_back_cancels_a_google_sign_in_waiting_on_the_browser() -> void:
-	Cloud.google._cancelled = false
+func test_back_is_held_only_while_a_call_is_in_flight() -> void:
+	assert_false(_menu.go_back(), "an idle page leaves Back to the host")
 	assert_true(_menu._begin("Signing in…"))
 	assert_true(_menu.go_back(), "Back stays on the page until the call lands")
-	assert_true(Cloud.google._cancelled, "and tells the waiting sign-in to stop")
 	_menu._finish({"ok": false, "error": ""})
-	Cloud.google._cancelled = false
+	assert_false(_menu.go_back())
 
 
 func test_a_second_request_cannot_start_while_one_is_in_flight() -> void:
@@ -152,8 +96,8 @@ func test_the_busy_state_survives_the_rebuild_a_cloud_event_triggers() -> void:
 
 func test_a_failed_cloud_call_tells_the_player_why() -> void:
 	_menu._begin("Signing in…")
-	_menu._finish({"ok": false, "error": "that password is wrong"})
-	assert_string_contains(_menu._message, "that password is wrong",
+	_menu._finish({"ok": false, "error": "that link has expired"})
+	assert_string_contains(_menu._message, "that link has expired",
 		"the server's own words reach the player")
 	assert_eq(_menu._message_role, "red", "and read as a failure")
 
@@ -179,7 +123,7 @@ func _sign_in_fake() -> void:
 	Cloud.auth.uid = "test_uid"
 	Cloud.auth.refresh_token = "test_refresh"
 	Cloud.auth.email = "player@example.com"
-	_menu._show(AccountMenu.View.MAIN)  # rebuild against the now-signed-in Cloud
+	_menu.rebuild()  # against the now-signed-in Cloud
 
 
 func test_signed_in_main_view_offers_every_action() -> void:
@@ -210,7 +154,8 @@ func test_every_button_in_the_signed_in_view_is_focusable() -> void:
 func test_controls_come_back_after_a_cloud_call() -> void:
 	# The busy state disables the page's buttons, so it must hand them back —
 	# a menu left inert is unreachable by keyboard and gamepad alike.
-	_menu._begin("Signing in…")
+	_sign_in_fake()
+	_menu._begin("Syncing…")
 	for node in _menu.find_children("*", "Button", true, false):
 		assert_true((node as Button).disabled, "buttons go inert while a call is in flight")
 	_menu._finish({"ok": true, "error": ""})

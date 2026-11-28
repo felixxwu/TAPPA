@@ -19,7 +19,6 @@ signal auth_lost(reason: String)
 var rest: Node = null
 var auth: AuthService = null
 var sync: CloudSync = null
-var google: GoogleSignIn = null
 
 
 func _ready() -> void:
@@ -41,11 +40,6 @@ func _ready() -> void:
 	sync.conflict_detected.connect(func(summary: Dictionary) -> void: conflict_detected.emit(summary))
 	sync.profile_replaced.connect(func() -> void: profile_replaced.emit())
 	add_child(sync)
-
-	google = GoogleSignIn.new()
-	google.name = "GoogleSignIn"
-	google.rest = rest
-	add_child(google)
 
 	# Local saves drive cloud pushes. Debounced inside CloudSync, so connecting
 	# to every save is cheap.
@@ -90,29 +84,6 @@ func status_message() -> String:
 	if not is_signed_in():
 		return ""
 	return sync.status_message
-
-
-# --- Sign-in entry points ----------------------------------------------------
-# Each returns {ok, error} and, on success, immediately reconciles with the
-# cloud so the player sees their other device's progress right away.
-
-func sign_in_email(address: String, password: String) -> Dictionary:
-	return await _after_sign_in(await auth.sign_in_email(address, password))
-
-
-func register_email(address: String, password: String) -> Dictionary:
-	return await _after_sign_in(await auth.register_email(address, password))
-
-
-func sign_in_google() -> Dictionary:
-	var token := await google.sign_in()
-	if not token.ok:
-		return {"ok": false, "error": token.error}
-	return await _after_sign_in(await auth.sign_in_with_google(token.id_token))
-
-
-func send_password_reset(address: String) -> Dictionary:
-	return await auth.send_password_reset(address)
 
 
 func sign_out() -> void:

@@ -25,7 +25,7 @@ spec items still applies.
 
 **Phase 0 — Godot feature set**
 - [ ] 0.1 Web build on Cloudflare Pages
-- [ ] 0.2 Remove Google and password sign-in
+- [x] 0.2 Remove Google and password sign-in (2026-11-28)
 - [ ] 0.3 Email link sign-in
 - [ ] 0.4 Account deletion
 - [ ] 0.5 Cloud tests against the Firebase emulators
