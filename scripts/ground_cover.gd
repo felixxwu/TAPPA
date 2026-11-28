@@ -401,6 +401,7 @@ static func tile_aabb(t: Vector2i, buf: PackedFloat32Array) -> AABB:
 func _add_layer(parent: Node3D, t: Vector2i, key: String, buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial, reach: float) -> void:
 	if on_layer_built.is_valid():
 		on_layer_built.call(t, key, mat == far_material, buf, mesh)
+	var t0 := Time.get_ticks_usec()
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
@@ -413,6 +414,7 @@ func _add_layer(parent: Node3D, t: Vector2i, key: String, buf: PackedFloat32Arra
 	mmi.visibility_range_end = reach
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mmi)
+	PerfLog.track(&"cover_mesh", Time.get_ticks_usec() - t0)
 
 
 func _far_mesh_for(key: String) -> ArrayMesh:

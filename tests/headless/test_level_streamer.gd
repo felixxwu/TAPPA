@@ -640,3 +640,15 @@ func test_the_build_hook_sees_every_built_mesh_once_and_changes_nothing() -> voi
 	for t: Vector2i in hooked._tiles:
 		if hooked._tiles[t].near_mesh != null:
 			assert_eq(hooked._tiles[t].near_arrays[0], plain._tiles[t].near_arrays[0], "same ground with the hook set")
+
+
+func test_streaming_reports_the_finer_perf_keys() -> void:
+	var s := LevelStreamer.new()
+	s.setup(_data, _bake, ShaderMaterial.new())
+	add_child(s)
+	s.focus = _car
+	PerfLog.begin_capture()
+	s.prefill()
+	var report := PerfLog.end_capture(1)
+	s.free()
+	assert_true(report.has("stream_mesh"), "mesh uploads are tracked")

@@ -1,0 +1,15 @@
+[package]
+name = "physics"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = ["deterministic"]
+deterministic = []
+
+[dependencies]
+sha2 = "=0.10.9"
+
+[build-dependencies]
+cc = "=1.11.2"

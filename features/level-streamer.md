@@ -27,7 +27,7 @@ rings and changes them live through `apply_rings`.
 left over (`spare_us`, set by the adaptive graphics), never below `budget_min_fraction` of the actual
 frame time, with that floor capped at what it would be at `budget_floor_fps`. `_process` plans, runs the
 collision safety net, runs the queue, then streams cover tiles from whatever the budget has left
-(`PerfLog` keys `terrain_streamer` and `ground_cover`).
+(`PerfLog` keys `terrain_streamer` and `ground_cover`). Finer keys say where a slow upload frame goes: `stream_mesh` (`ArrayMesh` build in `_upload`/`_restitch`), `stream_node` (`add_child` of the chunk mesh in `_attach`), `stream_shape` (the `HeightMapShape3D` body build) and, in `ground_cover.gd`, `cover_mesh` (one `MultiMesh` layer). Draw-time engine work isn't caught; `render_cpu_ms` covers that.
 
 A square of ground is built by a resumable `ChunkJob` moving through stages:
 
@@ -93,7 +93,7 @@ A square of ground is built by a resumable `ChunkJob` moving through stages:
 arrays)` just before the `ArrayMesh` is made. `tools/neutral_geometry.gd` (`NeutralGeometry.export(dir)`, run by
 `tools/neutral_export.tscn -- --geometry=<dir>`) sets it, plus `GroundCover.on_layer_built`, and flies a marker along
 `benchmark/runs/hafren.rec` prefilling every 50 m, writing `level_geometry.tapn` (chunk arrays, one shared index list per
-`n`, cover buffers, tuft meshes) and its parity manifest lines. Unset, the hook costs one `is_valid()` check.
+`n`, cover buffers, tuft meshes, and per sample the live chunk and cover lists, see `features/neutral-format.md`) and its parity manifest lines. Unset, the hook costs one `is_valid()` check.
 
 ## Threads
 

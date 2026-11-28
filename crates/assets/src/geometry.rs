@@ -1,6 +1,6 @@
 //! The level geometry the game builds along the replay path (ground chunks, cover tiles, tuft meshes), read from `level_geometry.tapn`.
 
-use crate::manifest::{f32s, i32s};
+use crate::manifest::{f32s, i32s, line_bytes};
 use crate::neutral::{int, open, section, section_lines, Sections};
 use std::collections::BTreeMap;
 
@@ -34,6 +34,14 @@ pub struct TuftMesh {
     pub arrays: Vec<String>,
 }
 
+/// What was live at one point of the path: indices into `Geometry::chunks` and `Geometry::cover`.
+#[derive(Debug)]
+pub struct Sample {
+    pub pos: [f64; 3],
+    pub chunks: Vec<usize>,
+    pub cover: Vec<usize>,
+}
+
 #[derive(Debug)]
 pub struct Geometry {
     pub sample_m: f64,
@@ -41,6 +49,7 @@ pub struct Geometry {
     pub indices: BTreeMap<i64, Vec<i32>>,
     pub cover: Vec<CoverLayer>,
     pub tufts: Vec<TuftMesh>,
+    pub samples: Vec<Sample>,
     sections: Sections,
 }
 
@@ -92,11 +101,37 @@ impl Geometry {
                 arrays: t["arrays"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
             });
         }
-        Ok(Geometry { sample_m: crate::neutral::float(&h, "sample_m")?, chunks, indices, cover, tufts, sections })
+        let mut samples = Vec::new();
+        for s in h["samples"].as_array().ok_or("header has no samples")? {
+            let ids = |k: &str, len: usize| -> Result<Vec<usize>, String> {
+                crate::neutral::floats(&s[k])?
+                    .into_iter()
+                    .map(|v| if v >= 0.0 && (v as usize) < len { Ok(v as usize) } else { Err(format!("sample {k} index {v} is out of range")) })
+                    .collect()
+            };
+            let p = crate::neutral::floats(&s["pos"])?;
+            samples.push(Sample {
+                pos: [p[0], p[1], p[2]],
+                chunks: ids("chunks", chunks.len())?,
+                cover: ids("cover", cover.len())?,
+            });
+        }
+        Ok(Geometry { sample_m: crate::neutral::float(&h, "sample_m")?, chunks, indices, cover, tufts, samples, sections })
     }
 
     /// NeutralGeometry's lines: the SHA-256 of every section's raw bytes.
     pub fn manifest(&self, file: &str) -> Vec<String> {
-        section_lines(file, &self.sections)
+        let mut lines = section_lines(file, &self.sections);
+        let (mut pos, mut live) = (Vec::new(), Vec::new());
+        for s in &self.samples {
+            s.pos.iter().for_each(|v| pos.extend((*v as f32).to_le_bytes()));
+            live.extend((s.chunks.len() as i32).to_le_bytes());
+            s.chunks.iter().for_each(|i| live.extend((*i as i32).to_le_bytes()));
+            live.extend((s.cover.len() as i32).to_le_bytes());
+            s.cover.iter().for_each(|i| live.extend((*i as i32).to_le_bytes()));
+        }
+        lines.push(line_bytes(file, "samples.pos", &pos));
+        lines.push(line_bytes(file, "samples.live", &live));
+        lines
     }
 }

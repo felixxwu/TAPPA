@@ -2,6 +2,7 @@
 
 pub mod bake;
 pub mod buildings;
+pub mod camera;
 pub mod container;
 pub mod font;
 pub mod geometry;

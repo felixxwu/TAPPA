@@ -1,11 +1,35 @@
-//! asset_check <neutral dir> [levels dir]: reads every neutral file it knows (the neutral dir's index.json and level_geometry.tapn, the levels dir's bakes), prints the parity manifest, exits non-zero naming any file it can't read.
+//! asset_check [--font-scale] <neutral dir> [levels dir]: reads every neutral file it knows (the neutral dir's index.json and level_geometry.tapn, the levels dir's bakes), prints the parity manifest, exits non-zero naming any file it can't read.
 
-use assets::{bake::LevelBake, buildings, font::Font, geometry, geometry::Geometry, level_json, manifest::{line_bytes, sha256}, scene::Scene, texture::Texture};
+use assets::{bake::LevelBake, buildings, camera::{self, CameraPath}, font::Font, geometry, geometry::Geometry, level_json, manifest::{line_bytes, sha256}, scene::Scene, texture::Texture};
 use serde_json::Value;
 use std::{fs, path::Path, process::exit};
 
+fn font_scale(dir: &str) -> ! {
+    let font = fs::read(Path::new(dir).join("fonts/Jersey10.ttf.tapn")).map_err(|e| e.to_string()).and_then(|x| Font::load(&x));
+    match font {
+        Err(e) => {
+            eprintln!("asset_check --font-scale: {e}");
+            exit(1)
+        }
+        Ok(f) => {
+            let diffs = f.scale_check();
+            if diffs.is_empty() {
+                println!("font-scale: 36 px is exactly 2x the 18 px glyphs (U+0020..U+00FF)");
+            } else {
+                println!("font-scale: {} glyphs differ, the UI needs two atlases", diffs.len());
+                diffs.iter().take(20).for_each(|d| println!("  {d}"));
+            }
+            exit(0)
+        }
+    }
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--font-scale") {
+        args.remove(i);
+        font_scale(args.get(1).map(String::as_str).unwrap_or("build/neutral"));
+    }
     let levels = args.get(2).map(String::as_str).unwrap_or("tools/levels");
     let mut lines = Vec::new();
     let mut failed = false;
@@ -42,6 +66,10 @@ fn main() {
     let geo = Path::new(dir).join(geometry::FILE);
     if geo.exists() {
         check(geo.to_string_lossy().to_string(), fs::read(&geo).map_err(|e| e.to_string()).and_then(|x| Ok(Geometry::load(&x)?.manifest(geometry::FILE))));
+    }
+    let cam = Path::new(dir).join(camera::FILE);
+    if cam.exists() {
+        check(cam.to_string_lossy().to_string(), fs::read(&cam).map_err(|e| e.to_string()).and_then(|x| Ok(CameraPath::load(&x)?.manifest(camera::FILE))));
     }
     let entries = fs::read_dir(levels).map(|d| d.flatten().map(|e| e.path()).collect::<Vec<_>>()).unwrap_or_default();
     for bin in entries.iter().filter(|p| p.to_string_lossy().ends_with(".bake.bin")) {

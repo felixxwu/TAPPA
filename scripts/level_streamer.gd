@@ -931,9 +931,11 @@ func _restitch(t: Vector2i, ts: TileState, mask: int) -> void:
 		arrays[Mesh.ARRAY_INDEX] = _indices_for(n)
 		if on_chunk_built.is_valid():
 			on_chunk_built.call(Level.NEAR, t, n, mask, arrays)
+		var t0 := Time.get_ticks_usec()
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		ts.near_mesh.mesh = mesh
+		PerfLog.track(&"stream_mesh", Time.get_ticks_usec() - t0)
 
 
 # Once per _arrays call: values _pack_vertex reuses for every vertex.
@@ -968,8 +970,10 @@ func _upload(job: ChunkJob) -> void:
 	arrays[Mesh.ARRAY_INDEX] = _indices_for(job.n)
 	if on_chunk_built.is_valid():
 		on_chunk_built.call(job.level, job.coord, job.n, job.stitch, arrays)
+	var t0 := Time.get_ticks_usec()
 	job.mesh = ArrayMesh.new()
 	job.mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	PerfLog.track(&"stream_mesh", Time.get_ticks_usec() - t0)
 	job.stage = Stage.ATTACH
 
 
@@ -987,7 +991,9 @@ func _attach(job: ChunkJob) -> void:
 	mi.material_override = material
 	mi.position = Vector3(job.origin.x, 0.0, job.origin.y)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # the ground barely shadows itself in this look, and it was a second draw call per chunk
+	var t0 := Time.get_ticks_usec()
 	add_child(mi)
+	PerfLog.track(&"stream_node", Time.get_ticks_usec() - t0)
 	var arrays := [job.verts, job.colors, job.uvs, job.uv2s]
 	match job.level:
 		Level.NEAR:
@@ -1168,6 +1174,7 @@ func _collide_tile(t: Vector2i) -> void:
 	for gz in n:
 		for gx in n:
 			samples[gz * n + gx] = heights[(off.y + gz + 1) * m + off.x + gx + 1]
+	var t0 := Time.get_ticks_usec()
 	var shape := HeightMapShape3D.new()
 	shape.map_width = n
 	shape.map_depth = n
@@ -1181,6 +1188,7 @@ func _collide_tile(t: Vector2i) -> void:
 	body.position = Vector3(t.x * settings.near_tile_m + half, 0.0, t.y * settings.near_tile_m + half)
 	body.add_child(cs)
 	add_child(body)
+	PerfLog.track(&"stream_shape", Time.get_ticks_usec() - t0)
 	if ts.body != null:
 		ts.body.queue_free()
 	ts.body = body

@@ -21,6 +21,7 @@ extends Node
 
 const DEFAULT_PATH := "res://benchmark/runs/hafren.rec"
 const REPORT_PATH := "user://level_replay_report.json"  # a native replay's full report (the web one goes to the collector)
+const NeutralCam := preload("res://tools/neutral_camera.gd")
 const STRIDE := 21  # per tick: basis 9, origin 3, linear velocity 3, angular velocity 3, throttle, steer, handbrake
 const WARMUP_FRAMES := 60  # unsampled frames after the warm-up, while the first views settle
 const DEFAULT_UNTIL_S := 15.0  # enough to compare one change; --full replays all of it
@@ -65,6 +66,9 @@ var _trace: FileAccess
 var _frame_skew := -1   # process frames minus physics frames at the first traced tick; must never change
 var _car_trace_path := ""  # --car-trace=<file>: a free golden run writes {tick, input, snap, world} per tick
 var _car_trace: FileAccess
+var _camera_path := ""  # --camera-out=<file>: a golden run writes the camera and car pose per tick (tools/neutral_camera.gd)
+var _camera_rows := PackedFloat32Array()
+var _car_rows := PackedFloat32Array()
 var _events_path := ""  # --events=<file>: a golden run writes GameTrace events, audio rows and the final save
 var _events: FileAccess
 var _game_script: Array = []  # --game-script=<json>: [{tick, do, args}] run through GameTrace.act
@@ -127,6 +131,8 @@ func _ready() -> void:
 			_script_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--car-trace="):
 			_car_trace_path = arg.get_slice("=", 1)
+		elif arg.begins_with("--camera-out="):
+			_camera_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--events="):
 			_events_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--game-script="):
@@ -363,6 +369,8 @@ func _physics_process(_delta: float) -> void:
 				"snap": _car.snapshot(), "world": _world_state()}, "", true, true))
 		if _events != null:
 			_events_tick(_tick)
+		if _camera_path != "":
+			_camera_tick()
 		_play_tick(_tick)
 		_tick += 1
 	else:
@@ -504,6 +512,15 @@ func _tick_count() -> int:
 	return _inputs.size() if _free else floori(_ticks.size() / float(STRIDE))
 
 
+# The camera and car as they stand entering this tick (before its pose is written).
+func _camera_tick() -> void:
+	var view := _level.get_node_or_null("PostProcess/View") as Viewport
+	var cam := (view if view != null else get_viewport()).get_camera_3d()
+	_camera_rows.append_array(NeutralCam.flat(cam.global_transform))
+	_camera_rows.append_array([cam.fov, cam.near, cam.far])
+	_car_rows.append_array(NeutralCam.flat(_car.global_transform))
+
+
 func _play_tick(i: int) -> void:
 	if _free:
 		return
@@ -617,6 +634,8 @@ func _close_step() -> void:
 
 func _finish() -> void:
 	_started = false
+	if _camera_path != "":
+		NeutralCam.write(_camera_path, _camera_rows, _car_rows, Engine.physics_ticks_per_second, _car_id)
 	if _free:
 		TickInput.release_all()
 	if _trace != null:

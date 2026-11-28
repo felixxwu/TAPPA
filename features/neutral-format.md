@@ -56,6 +56,18 @@ For a `.tapn`, `<file>` is its path under `build/neutral/` and each section's li
   `glyphs` rows are `[codepoint, advance.x, advance.y, offset.x, offset.y, size.x, size.y, uv.x, uv.y, uv.w, uv.h,
   texture_index]` for U+0020-U+00FF (px, UV in atlas pixels); `textures` is `{width, height, format}` per atlas.
   Sections `ttf`, `atlas.<size>.<i>`. Manifest: `glyphs.<size>` (the rows as f64), `ascent.<size>`, `descent.<size>`, sections.
+  `asset_check --font-scale <dir>` (run by `tools/neutral_check.sh`, report only) lists glyphs whose 36 px bitmap or advance isn't the 18 px one scaled 2x (`Font::scale_check`).
+- **Camera path** `camera_path.tapn` (kind `camera_path`, `tools/neutral_camera.gd`, `crates/assets/src/camera.rs`): the
+  Hafren replay's camera and car pose entering each physics tick. Header `hz, ticks, car, logical_size` (window 1920x1080
+  through `DisplayStretch.logical_size`), `horizontal_stretch`, `config` (the `GameConfig` fields the renderer reads:
+  `virtual_resolution`, `horizontal_stretch`; add names to `NeutralCamera.CONFIG_FIELDS`). Sections `camera` (f32 x 15 per
+  tick: 12-float transform as in scenes, then `fov, near, far`) and `car` (f32 x 12). Written by
+  `benchmark/level_replay.gd --golden --full --camera-out=<file>`; `neutral_export -- --camera=<dir>` runs that in a child
+  Godot (with a temporary `override.cfg`, as `run_level_replay.sh` does) and merges its manifest lines. Manifest: both sections, `ticks`, `hz`.
+- **Level geometry** `level_geometry.tapn` (kind `level_geometry`, `tools/neutral_geometry.gd`): header `samples:
+  [{pos, chunks, cover}]` per 50 m of the replay path, indices into the file's own `chunks` / `cover` lists (the live chunk
+  variants, one per `(level, coord, stitch mask)`, and the cover layers of the live tiles; only variants some sample names
+  are kept). Manifest: sections, plus `samples.pos` (f32 x 3 each) and `samples.live` (i32 `[n, chunk ids..., m, cover ids...]` each).
 - **Music** `music/*.ogg`: copied as is, `kind: "ogg"`; manifest `ogg` = SHA-256.
 - **Shader globals** `shader_globals.json`: `{kind, globals: [{name, type, value}]}` from `[shader_globals]`.
 - Level JSON (`json.trees`, `json.height`, `json.cover`) and buildings (`buildings.floats`) lines come from `tools/neutral_export.gd`.

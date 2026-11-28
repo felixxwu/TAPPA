@@ -14,6 +14,7 @@ for save in tools/levels/*.json; do
 done
 export_run --assets="$OUT" || exit 1
 export_run --geometry="$OUT" || exit 1
+export_run --camera="$OUT" || exit 1
 cargo test -p assets || exit 1
 cargo run --release -p assets --bin asset_check -- "$OUT" > "$OUT/rust.manifest" || exit 1
 if ! diff "$OUT/godot.manifest" "$OUT/rust.manifest" > "$OUT/manifest.diff"; then
@@ -21,4 +22,5 @@ if ! diff "$OUT/godot.manifest" "$OUT/rust.manifest" > "$OUT/manifest.diff"; the
 	head -20 "$OUT/manifest.diff"
 	exit 1
 fi
+cargo run --release -p assets --bin asset_check -- --font-scale "$OUT"  # a report, not a gate
 echo "neutral_check: manifests match ($(wc -l < "$OUT/godot.manifest") lines)"

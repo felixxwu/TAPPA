@@ -17,7 +17,7 @@ on:
   # Direct pushes to main that touch goldens/ still get the bless guard and the golden checks.
   push:
     branches: [main]
-    paths: ["goldens/**", "crates/**", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "tools/neutral_*", "scripts/level_bake.gd", "scripts/neutral_file.gd"]
+    paths: ["goldens/**", "crates/**", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "third_party/**", "web/viewer/**", "tools/build_viewer_web.sh", "tools/web_check.mjs", "tools/wasi_sdk.sh", "tools/dep_guard.sh", "tools/neutral_*", "scripts/level_bake.gd", "scripts/neutral_file.gd"]
   workflow_dispatch:
     inputs:
       bless:
@@ -354,3 +354,176 @@ jobs:
             fi
           done
           exit $BAD
+
+  # Phase 3 spike (todo/2026-11-28-phase-3-plan.md, R1-R7). Cargo.lock is not committed-clean yet, so no --locked;
+  # each job uploads the Cargo.lock it resolved.
+  rust-native:
+    name: Rust native (R1, R1b, R6 lavapipe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Install lavapipe
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - name: Dependency guard
+        run: tools/dep_guard.sh
+      - name: Workspace tests (GPU probe on lavapipe)
+        env:
+          TAPPA_GPU: "1"
+          TAPPA_GPU_ADAPTER: llvmpipe
+          WGPU_BACKEND: vulkan
+        run: cargo test --workspace -- --nocapture
+      - name: R1b determinism option difference
+        run: |
+          set -euo pipefail
+          cargo test -p physics --test r1b --no-default-features -- --nocapture
+          cargo test -p physics --test r1b -- --nocapture | tee r1b.log
+          { echo "### R1b"; grep R1B r1b.log || echo "no R1B line"; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cargo.lock-rust-native
+          path: Cargo.lock
+
+  rust-web:
+    name: Rust web (R2, R3, R4, R5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Read the nightly pin from build_viewer_web.sh
+        run: |
+          N=$(grep -oE 'nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}' tools/build_viewer_web.sh | head -1)
+          echo "NIGHTLY=$N" >> "$GITHUB_ENV"
+          echo "WGBG=$(grep -E '^wasm-bindgen = ' crates/app/Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" >> "$GITHUB_ENV"
+      - name: Install nightly with rust-src and the wasm target
+        run: |
+          rustup toolchain install "$NIGHTLY" --profile minimal --component rust-src --target wasm32-unknown-unknown
+          rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ env.NIGHTLY }}
+      - name: Install wasm-bindgen-cli (same version as the crate) and wasm-tools
+        run: cargo install wasm-bindgen-cli@"$WGBG" wasm-tools --locked
+      - name: wasi-sdk
+        run: tools/wasi_sdk.sh
+      - name: Build the viewer (R2 link, R5 compile)
+        run: tools/build_viewer_web.sh
+      - name: R2 memory is shared and no stray wasi imports
+        run: |
+          set -euo pipefail
+          wasm-tools print build/viewer/viewer_bg.wasm > build/viewer/viewer.wat
+          grep -E '\(import "[^"]+" "memory" \(memory [^)]*shared' build/viewer/viewer.wat
+          if grep -E 'import "wasi_snapshot_preview1"' build/viewer/viewer.wat; then echo "stray wasi imports"; exit 1; fi
+          grep -oE '\(import "[^"]+"' build/viewer/viewer.wat | sort | uniq -c | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright and Chromium
+        run: |
+          npm install -g playwright@1.52.0
+          playwright install --with-deps chromium
+      - name: Native reference trace for R3
+        run: |
+          mkdir -p build
+          cargo run -p app --bin viewer --release -- --check=jolt > build/native-jolt.json
+      - name: R3 jolt on wasm equals native
+        run: node tools/web_check.mjs jolt --expect=build/native-jolt.json
+      - name: R4 jolt_worker
+        if: always()
+        run: node tools/web_check.mjs jolt_worker --expect=build/native-jolt.json
+      - name: R5 gpu probe on SwiftShader
+        if: always()
+        run: node tools/web_check.mjs gpu
+      - name: Upload the viewer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: viewer
+          path: build/viewer
+          if-no-files-found: ignore
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cargo.lock-rust-web
+          path: Cargo.lock
+
+  rust-windows:
+    name: Rust Windows (R6 WARP)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Render probe on WARP
+        env:
+          TAPPA_GPU: "1"
+          TAPPA_GPU_FALLBACK: "1"
+          WGPU_BACKEND: dx12
+        run: cargo test -p render -- --nocapture
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cargo.lock-rust-windows
+          path: Cargo.lock
+
+  rust-apple:
+    name: Rust Apple (R7)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - run: rustup show
+      - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Build for iOS
+        run: |
+          cargo build -p app --lib --target aarch64-apple-ios
+          cargo build -p app --lib --target aarch64-apple-ios-sim
+      - name: Probe on macOS (Metal; skipped when the runner has no adapter)
+        env:
+          TAPPA_GPU: "1"
+        run: |
+          if cargo test -p render --test probe -- --nocapture 2>&1 | tee probe.log; then exit 0; fi
+          if grep -q "no adapter" probe.log; then echo "::notice::no Metal adapter on this runner, probe skipped"; else exit 1; fi
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cargo.lock-rust-apple
+          path: Cargo.lock
+
+  rust-android:
+    name: Rust Android (R7)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - run: rustup show
+      - run: rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install --locked cargo-ndk@3.5.4
+      - name: Build for arm64-v8a with the runner's NDK
+        run: cargo ndk -t arm64-v8a build -p app --lib
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cargo.lock-rust-android
+          path: Cargo.lock

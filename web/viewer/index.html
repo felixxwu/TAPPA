@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rally viewer</title>
+<style>body{margin:0;background:#111;color:#ddd;font:14px monospace}pre{margin:16px;white-space:pre-wrap;word-break:break-all}</style>
+</head>
+<body>
+<pre id="out">loading</pre>
+<script type="module">
+import init, { initThreadPool, run_jolt_trace, run_jolt_worker, run_gpu_probe } from './viewer.js';
+
+const runs = { jolt: run_jolt_trace, jolt_worker: run_jolt_worker, gpu: run_gpu_probe };
+const name = new URLSearchParams(location.search).get('check');
+const out = document.getElementById('out');
+try {
+  if (!crossOriginIsolated) throw new Error('not cross-origin isolated (needs COOP/COEP)');
+  await init();
+  await initThreadPool(Math.max(2, navigator.hardwareConcurrency || 2));
+  if (!name) {
+    out.textContent = 'viewer ready (no ?check=)';
+  } else if (!runs[name]) {
+    throw new Error('unknown check ' + name);
+  } else {
+    window.__check = JSON.parse(await runs[name]());
+    out.textContent = (window.__check.ok ? 'ok ' : 'FAIL ') + window.__check.detail.slice(0, 2000);
+  }
+} catch (e) {
+  window.__check = { ok: false, detail: String(e && e.stack || e) };
+  out.textContent = window.__check.detail;
+}
+</script>
+</body>
+</html>

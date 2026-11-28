@@ -174,7 +174,7 @@ It also carries:
 - `frames`: every sampled stream frame by frame, plus the replay time, the car's position, the streamer's
   in-flight chunk builds, queued chunk jobs and in-flight cover tiles, the full-detail terrain's state
   (`speed_mps`, `near_misses`, `near_build_ms`, `near_overdue`, `due_near`, `due_collision`;
-  [adaptive-graphics.md](adaptive-graphics.md)), and `scripts_ms` (each `PerfLog.track` key over 0.5 ms
+  [adaptive-graphics.md](adaptive-graphics.md)), and `scripts_ms` (each `PerfLog.track` key over 0.5 ms; the streaming spike is split into `stream_mesh`, `stream_node`, `stream_shape`, `cover_mesh`, see [level-streamer.md](level-streamer.md)
   since the previous frame; the level's per-frame scripts `level_view`, `level_trees`, `terrain_streamer`,
   `ground_cover`, `level_spectators`, `level_minimap`, `level_map`, `route_arrow` are tracked), so a spike
   can be lined up with what was loading at the time.

@@ -13,11 +13,14 @@ const ARRAY_NAMES := {Mesh.ARRAY_VERTEX: "vertex", Mesh.ARRAY_NORMAL: "normal", 
 
 static func export(dir: String) -> PackedStringArray:
 	var ticks: PackedFloat32Array = FileAccess.open(Replay.DEFAULT_PATH, FileAccess.READ).get_var()["ticks"]
-	var chunks := {}  # "level,x,z" -> [level, coord, n, mask, arrays]; a rebuilt chunk keeps its last arrays
+	var chunks := {}  # "level,x,z,mask" -> [level, coord, n, mask, arrays]; every build variant, so a sample can name the one it had
+	var current := {}  # "level,x,z" -> the variant key built last, i.e. the one on screen
 	var cover := {}  # "x,z,key,far" -> [tile, key, far, buffer]
 	var tufts := {}  # "key,far" -> [key, far, mesh]
 	LevelStreamer.on_chunk_built = func(level: int, coord: Vector2i, n: int, mask: int, arrays: Array) -> void:
-		chunks["%d,%d,%d" % [level, coord.x, coord.y]] = [level, coord, n, mask, arrays]
+		var at := "%d,%d,%d" % [level, coord.x, coord.y]
+		current[at] = "%s,%d" % [at, mask]
+		chunks[current[at]] = [level, coord, n, mask, arrays]
 	GroundCover.on_layer_built = func(t: Vector2i, key: String, far: bool, buf: PackedFloat32Array, mesh: ArrayMesh) -> void:
 		cover["%d,%d,%s,%s" % [t.x, t.y, key, far]] = [t, key, far, buf]
 		tufts["%s,%s" % [key, far]] = [key, far, mesh]
@@ -37,6 +40,7 @@ static func export(dir: String) -> PackedStringArray:
 	var marker := Node3D.new()
 	world.add_child(marker)
 	streamer.focus = marker
+	var samples := []  # [{pos, chunks: [variant key], cover: [cover key]}]
 	var last := Vector3.INF
 	for i in floori(ticks.size() / float(Replay.STRIDE)):
 		var o := i * Replay.STRIDE + 9
@@ -46,22 +50,62 @@ static func export(dir: String) -> PackedStringArray:
 		last = p
 		marker.global_position = p
 		await streamer.prefill_async()  # one synchronous pass in a golden run: ground, then cover
+		samples.append({"pos": p, "chunks": _live_chunks(streamer, current), "cover": _live_cover(streamer.cover, cover)})
 	LevelStreamer.on_chunk_built = Callable()
 	GroundCover.on_layer_built = Callable()
 	world.queue_free()
 	await tree.process_frame
 	Benchmark.golden = was_golden
-	return _write(dir.path_join(FILE), chunks, cover, tufts)
+	return _write(dir.path_join(FILE), chunks, cover, tufts, samples)
 
 
-static func _write(path: String, chunks: Dictionary, cover: Dictionary, tufts: Dictionary) -> PackedStringArray:
-	var header := {"kind": "level_geometry", "sample_m": SAMPLE_M, "chunks": [], "cover": [], "tuft_meshes": []}
+# The chunk variants whose mesh is in the tree right now: near tiles, mid and far chunks, horizon blocks.
+static func _live_chunks(streamer: LevelStreamer, current: Dictionary) -> Array:
+	var out := []
+	var add := func(level: int, coord: Vector2i, mesh: MeshInstance3D) -> void:
+		var at := "%d,%d,%d" % [level, coord.x, coord.y]
+		if mesh != null and mesh.is_inside_tree() and current.has(at):
+			out.append(current[at])
+	for t: Vector2i in streamer._tiles:
+		add.call(LevelStreamer.Level.NEAR, t, streamer._tiles[t].near_mesh)
+	for c: Vector2i in streamer._chunks:
+		add.call(LevelStreamer.Level.MID, c, streamer._chunks[c].mid_mesh)
+		add.call(LevelStreamer.Level.FAR, c, streamer._chunks[c].far_mesh)
+	for b: Vector2i in streamer._horizon:
+		add.call(LevelStreamer.Level.HORIZON, b, streamer._horizon[b].mesh)
+	return out
+
+
+# Every cover layer of every tile the cover node holds.
+static func _live_cover(ground_cover: GroundCover, cover: Dictionary) -> Array:
+	var out := []
+	if ground_cover == null:
+		return out
+	for k: String in cover:
+		if ground_cover.tiles.has(cover[k][0]):
+			out.append(k)
+	return out
+
+
+static func _write(path: String, all_chunks: Dictionary, all_cover: Dictionary, tufts: Dictionary, samples: Array) -> PackedStringArray:
+	# Only what some sample names goes in the file; the indices in `samples` point into these sorted lists.
+	var chunks := {}
+	var cover := {}
+	for s: Dictionary in samples:
+		for k: String in s["chunks"]:
+			chunks[k] = all_chunks[k]
+		for k: String in s["cover"]:
+			cover[k] = all_cover[k]
+	var header := {"kind": "level_geometry", "sample_m": SAMPLE_M, "chunks": [], "cover": [], "tuft_meshes": [], "samples": []}
 	var raw := []  # [[name, bytes], ...]
 	var indices := {}
+	var chunk_ids := {}
+	var cover_ids := {}
 	var keys := chunks.keys()
 	keys.sort()
 	for i in keys.size():
 		var c: Array = chunks[keys[i]]
+		chunk_ids[keys[i]] = i
 		var arrays: Array = c[4]
 		header["chunks"].append({"level": c[0], "coord": [c[1].x, c[1].y], "n": c[2], "mask": c[3]})
 		for a: int in [Mesh.ARRAY_VERTEX, Mesh.ARRAY_COLOR, Mesh.ARRAY_TEX_UV, Mesh.ARRAY_TEX_UV2]:
@@ -75,6 +119,7 @@ static func _write(path: String, chunks: Dictionary, cover: Dictionary, tufts: D
 	keys.sort()
 	for i in keys.size():
 		var c: Array = cover[keys[i]]
+		cover_ids[keys[i]] = i
 		header["cover"].append({"tile": [c[0].x, c[0].y], "layer": c[1], "far": c[2], "count": int((c[3] as PackedFloat32Array).size() / 12.0)})
 		raw.append(["cover.%d" % i, (c[3] as PackedFloat32Array).to_byte_array()])
 	keys = tufts.keys()
@@ -90,8 +135,24 @@ static func _write(path: String, chunks: Dictionary, cover: Dictionary, tufts: D
 					names.append(ARRAY_NAMES[a])
 					raw.append(["tuft.%d.%s" % [i, ARRAY_NAMES[a]], arrays[a].to_byte_array()])
 		header["tuft_meshes"].append({"layer": t[0], "far": t[1], "arrays": names})
+	var pos := PackedFloat32Array()
+	var live := PackedInt32Array()
+	for s: Dictionary in samples:
+		var c := []
+		var v := []
+		for k: String in s["chunks"]:
+			c.append(chunk_ids[k])
+		for k: String in s["cover"]:
+			v.append(cover_ids[k])
+		header["samples"].append({"pos": [s["pos"].x, s["pos"].y, s["pos"].z], "chunks": c, "cover": v})
+		pos.append_array([s["pos"].x, s["pos"].y, s["pos"].z])
+		live.append(c.size())
+		live.append_array(c)
+		live.append(v.size())
+		live.append_array(v)
 	var sections := []
-	var lines := PackedStringArray()
+	var lines := PackedStringArray([NeutralFile.line(FILE, "samples.pos", pos.to_byte_array()),
+		NeutralFile.line(FILE, "samples.live", live.to_byte_array())])
 	for s: Array in raw:
 		sections.append([s[0], NeutralFile.zip(s[1])])
 		lines.append(NeutralFile.line(FILE, s[0], s[1]))

@@ -1,0 +1,16 @@
+[package]
+name = "render"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+wgpu = "=25.0.2"
+bytemuck = { version = "=1.22.0", features = ["derive"] }
+glam = "=0.30.0"
+futures-channel = "=0.3.31"
+assets = { path = "../assets" }
+
+[dev-dependencies]
+pollster = "=0.4.0"
+naga = { version = "=25.0.1", features = ["wgsl-in"] }

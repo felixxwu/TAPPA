@@ -57,6 +57,60 @@ impl Font {
         self.sections.iter().find(|(n, _)| *n == want).map(|(_, b)| b.as_slice())
     }
 
+    /// Glyphs U+0020..=U+00FF whose 36 px bitmap or advance isn't exactly the 18 px one scaled 2x (nearest neighbour). Empty means one 18 px atlas can serve both sizes.
+    pub fn scale_check(&self) -> Vec<String> {
+        let (Some(small), Some(big)) = (self.sizes.get(&18), self.sizes.get(&36)) else {
+            return vec!["font has no 18 and 36 px sizes".to_string()];
+        };
+        let mut out = Vec::new();
+        for cp in 0x20..=0xFFu32 {
+            let find = |d: &SizeData| d.glyphs.iter().find(|g| g[0] as u32 == cp);
+            let (Some(a), Some(b)) = (find(small), find(big)) else {
+                out.push(format!("U+{cp:04X}: missing at one size"));
+                continue;
+            };
+            if (a[1] * 2.0 - b[1]).abs() > 1e-6 {
+                out.push(format!("U+{cp:04X}: advance {} x2 != {}", a[1], b[1]));
+            } else if let Some(why) = self.bitmap_differs(a, b) {
+                out.push(format!("U+{cp:04X}: {why}"));
+            }
+        }
+        out
+    }
+
+    fn bitmap_differs(&self, a: &Glyph, b: &Glyph) -> Option<String> {
+        let (aw, ah, bw, bh) = (a[9] as usize, a[10] as usize, b[9] as usize, b[10] as usize);
+        if aw * 2 != bw || ah * 2 != bh {
+            return Some(format!("bitmap {aw}x{ah} x2 != {bw}x{bh}"));
+        }
+        if aw * ah == 0 {
+            return None;
+        }
+        let pixels = |size: u32, g: &Glyph, w: usize, h: usize| -> Result<Vec<Vec<u8>>, String> {
+            let i = g[11] as usize;
+            let tex = self.sizes[&size].textures.get(i).ok_or("glyph texture index out of range")?;
+            let data = self.atlas(size, i).ok_or("atlas section missing")?;
+            let bpp = data.len() / (tex.width * tex.height) as usize;
+            let (x0, y0) = (g[7] as usize, g[8] as usize);
+            let mut rows = Vec::with_capacity(h);
+            for y in 0..h {
+                let start = ((y0 + y) * tex.width as usize + x0) * bpp;
+                rows.push(data.get(start..start + w * bpp).ok_or("glyph outside its atlas")?.to_vec());
+            }
+            Ok(rows)
+        };
+        let (sa, sb) = match (pixels(18, a, aw, ah), pixels(36, b, bw, bh)) {
+            (Ok(x), Ok(y)) => (x, y),
+            (Err(e), _) | (_, Err(e)) => return Some(e),
+        };
+        let bpp = sa[0].len() / aw;
+        let wrong = (0..bh).flat_map(|y| (0..bw).map(move |x| (x, y))).filter(|&(x, y)| {
+            sa[y / 2][(x / 2) * bpp..(x / 2 + 1) * bpp] != sb[y][x * bpp..(x + 1) * bpp]
+        });
+        let n = wrong.count();
+        (n > 0).then(|| format!("{n} of {} pixels differ", bw * bh))
+    }
+
     /// NeutralAssets.font's lines: every section, plus glyph rows, ascent and descent per size.
     pub fn manifest(&self, file: &str) -> Vec<String> {
         let mut out = section_lines(file, &self.sections);

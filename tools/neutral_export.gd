@@ -1,6 +1,6 @@
 extends Node
 # Writes the neutral (Godot-free) files and appends Godot's side of the parity manifest that the Rust reader's output is diffed against.
-# Run: godot --headless --path . res://tools/neutral_export.tscn -- --bake=res://tools/levels/x.json | --assets=<dir> | --geometry=<dir>
+# Run: godot --headless --path . res://tools/neutral_export.tscn -- --bake=res://tools/levels/x.json | --assets=<dir> | --geometry=<dir> | --camera=<dir>
 # --bake writes <save>.bake.bin beside the save; every mode merges its lines into <dir>/godot.manifest (--out=<dir> for --bake, default build/neutral).
 
 
@@ -27,11 +27,14 @@ func _ready() -> void:
 			"--geometry":
 				dir = _abs(kv[1])
 				lines = await _call_optional("res://tools/neutral_geometry.gd", "export", dir)
+			"--camera":
+				dir = _abs(kv[1])
+				lines = await _call_optional("res://tools/neutral_camera.gd", "export", dir)
 			_:
 				printerr("neutral_export: unknown option %s" % kv[0])
 				code = 1
 				continue
-		if lines.is_empty() and kv[0] == "--bake":
+		if lines.is_empty() and kv[0] in ["--bake", "--camera"]:
 			code = 1
 			continue
 		_merge_manifest(dir, lines)
