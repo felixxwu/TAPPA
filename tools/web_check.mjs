@@ -21,7 +21,7 @@ async function loadPlaywright() {
     return await import('playwright');
   } catch {
     const root = execSync('npm root -g').toString().trim();
-    return import(`${root}/playwright/index.mjs`);
+    return (await import('node:module')).createRequire(`${root}/`)('playwright');
   }
 }
 
