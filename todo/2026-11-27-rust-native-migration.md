@@ -24,10 +24,10 @@ spec items still applies.
 - [x] The Hafren-only cleanup is finished (2026-11-28; spec deleted, see git history)
 
 **Phase 0 — Godot feature set**
-- [ ] 0.1 Web build on Cloudflare Pages (in progress: code done 2026-11-28; needs the one-off Cloudflare setup in `features/release-pipeline.md`, the two CI secrets and a first deploy)
+- [x] 0.1 Web build on Cloudflare Pages (2026-11-28)
 - [x] 0.2 Remove Google and password sign-in (2026-11-28)
-- [ ] 0.3 Email link sign-in (in progress: code done 2026-11-28; needs `tappa.felixwu.me` in Firebase Auth's authorised domains, Firebase email-link provider on, Play Data safety form)
-- [ ] 0.4 Account deletion (in progress: code done 2026-11-28; needs live sign-in from 0.3)
+- [x] 0.3 Email link sign-in (2026-11-28)
+- [x] 0.4 Account deletion (2026-11-28)
 - [ ] 0.5 Cloud tests against the Firebase emulators (in progress: 6/6 pass locally 2026-11-28; the CI job has not run on GitHub yet)
 - [ ] 0.6 iOS export
 - [ ] **Exit:** live on the App Store and Cloudflare Pages; sign-in and deletion work everywhere
