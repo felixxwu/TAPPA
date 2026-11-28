@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 NIGHTLY="${NIGHTLY:-nightly-2026-11-10}" # CI reads this default (grep) so there is one pin
 OUT=build/viewer
 export WASI_SDK="${WASI_SDK:-$(tools/wasi_sdk.sh)}"
-export RUSTFLAGS="--cfg=web_sys_unstable_apis -C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--import-memory -C link-arg=--max-memory=2147483648"
+export RUSTFLAGS="--cfg=web_sys_unstable_apis -C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--import-memory -C link-arg=--max-memory=2147483648 -C link-arg=--export=__heap_base -C link-arg=--export=__data_end -C link-arg=--export=__wasm_init_tls -C link-arg=--export=__tls_size -C link-arg=--export=__tls_align -C link-arg=--export=__tls_base"
 
 cargo "+$NIGHTLY" build -p app --lib --release --target wasm32-unknown-unknown -Z build-std=std,panic_abort
 

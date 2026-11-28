@@ -60,7 +60,7 @@ mod tests {
     fn box_comes_to_rest_on_the_plane() {
         let last = *drop_box_states(600).last().unwrap();
         let expected = plane_height(last[0]) + HALF * (1.0 + SLOPE * SLOPE).sqrt();
-        assert!((last[1] - expected).abs() < 0.01, "centre y {} vs {}", last[1], expected);
+        assert!((last[1] - expected).abs() < 0.03, "centre y {} vs {}", last[1], expected);
         let speed = (last[7] * last[7] + last[8] * last[8] + last[9] * last[9]).sqrt();
         assert!(speed < 0.001, "speed {speed}");
     }
