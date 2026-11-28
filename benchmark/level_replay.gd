@@ -342,7 +342,8 @@ func _golden_ready() -> bool:
 func _golden_header() -> Dictionary:
 	return {"format": 1, "level_path": Config.data.level_path, "car": _car_id, "seed": Benchmark.RNG_SEED,
 		"godot_version": Engine.get_version_info()["string"], "platform": "%s/%s" % [OS.get_name(), Engine.get_architecture_name()],
-		"recording": _path.get_file(), "free": _free}
+		"recording": _path.get_file(), "free": _free, "start_physics_frame": Engine.get_physics_frames(),
+		"start_frame": Engine.get_process_frames()}
 
 
 func _physics_process(_delta: float) -> void:
